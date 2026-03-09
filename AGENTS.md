@@ -124,3 +124,4 @@ tmux kill-session -t zjbar_test
 - The WASM target is `wasm32-wasip1` (configured in `.cargo/config.toml`).
 - Release profile uses `opt-level = "s"` and LTO for minimal binary size.
 - Color palette follows Tokyo Night. All color defaults are defined in `config.rs`.
+- After any feature change, check if `README.md` needs updating (e.g. new config options, changed behavior, new install steps). If so, update it directly without asking for confirmation.
