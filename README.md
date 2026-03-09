@@ -1,5 +1,7 @@
 # zjbar
 
+English | [简体中文](README.zh-CN.md)
+
 A Zellij status bar plugin with a Tokyo Night powerline theme and optional Claude Code activity awareness.
 
 ## Features
