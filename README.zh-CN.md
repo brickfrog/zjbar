@@ -47,7 +47,7 @@ zellij --layout zjbar
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/latest/download/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.4/zjbar.wasm"
     }
 }
 ```
@@ -84,7 +84,11 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 brew install terminal-notifier
 ```
 
-安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。
+安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。通知包含从 Claude Code 对话记录中提取的**上下文感知消息摘要**：
+
+- **Stop** — 最后一条助手消息 + 工具使用统计（如 `📝2 ✏️3 ▶5`）
+- **PermissionRequest** — 请求权限的具体命令或文件路径
+- **Notification** — Claude Code 发送的通知消息
 
 可以通过 `~/.config/zellij/plugins/zjbar.json` 自定义通知事件和通知模式：
 

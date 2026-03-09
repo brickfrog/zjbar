@@ -47,7 +47,7 @@ Add the plugin to your Zellij layout directly (no Claude Code integration):
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/latest/download/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.4/zjbar.wasm"
     }
 }
 ```
@@ -84,7 +84,11 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 brew install terminal-notifier
 ```
 
-When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default.
+When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default. Notifications include **context-aware message summaries** extracted from Claude Code's transcript:
+
+- **Stop** — last assistant message + tool usage stats (e.g. `📝2 ✏️3 ▶5`)
+- **PermissionRequest** — the specific command or file path being requested
+- **Notification** — the notification message from Claude Code
 
 You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json`:
 

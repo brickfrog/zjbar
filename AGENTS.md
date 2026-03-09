@@ -125,3 +125,14 @@ tmux kill-session -t zjbar_test
 - Release profile uses `opt-level = "s"` and LTO for minimal binary size.
 - Color palette follows Tokyo Night. All color defaults are defined in `config.rs`.
 - After any feature change, check if `README.md` needs updating (e.g. new config options, changed behavior, new install steps). If so, update both `README.md` (English) and `README.zh-CN.md` (Chinese) directly without asking for confirmation.
+
+## Releasing a New Version
+
+When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the version in **all** of these places:
+
+1. **`Cargo.toml`** — `version = "x.y.z"`
+2. **`README.md`** — WASM download URL in the layout example (`releases/download/vX.Y.Z/zjbar.wasm`)
+3. **`README.zh-CN.md`** — same WASM download URL
+4. **`commands/install.md`** — WASM download URL in the curl command
+
+Use `grep -r 'releases/download/v' .` to verify all URLs are updated.

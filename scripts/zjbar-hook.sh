@@ -17,6 +17,10 @@ HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+# Notification event has message/title directly in input
+NOTIF_MESSAGE=$(echo "$INPUT" | jq -r '.message // empty')
+NOTIF_TITLE=$(echo "$INPUT" | jq -r '.title // empty')
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
@@ -38,6 +42,80 @@ PAYLOAD=$(jq -nc \
     zellij_session: $zellij_session,
     term_program: (if $term_program == "" then null else $term_program end)
   }')
+
+# -- Transcript summary extraction --
+# Extract a concise summary from Claude Code's JSONL transcript.
+# Usage: summary=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
+extract_summary() {
+  local transcript="$1" event="$2"
+  [ -z "$transcript" ] || [ ! -f "$transcript" ] && return
+
+  case "$event" in
+    Stop|SubagentStop)
+      # Get last assistant message text, clean markdown, truncate
+      local text
+      text=$(tail -100 "$transcript" \
+        | jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' 2>/dev/null \
+        | tail -1)
+      [ -z "$text" ] && return
+      # Strip markdown formatting
+      text=$(echo "$text" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
+      # Truncate to 120 chars at word boundary
+      if [ ${#text} -gt 120 ]; then
+        text="${text:0:117}"
+        text="${text% *}..."
+      fi
+      # Count tool usage in recent messages
+      local tools
+      tools=$(tail -200 "$transcript" \
+        | jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null)
+      local write_n edit_n bash_n
+      write_n=$(echo "$tools" | grep -c '^Write$' 2>/dev/null || echo 0)
+      edit_n=$(echo "$tools" | grep -c '^Edit$' 2>/dev/null || echo 0)
+      bash_n=$(echo "$tools" | grep -c '^Bash$' 2>/dev/null || echo 0)
+      local stats=""
+      [ "$write_n" -gt 0 ] 2>/dev/null && stats="${stats}📝${write_n} "
+      [ "$edit_n" -gt 0 ] 2>/dev/null && stats="${stats}✏️${edit_n} "
+      [ "$bash_n" -gt 0 ] 2>/dev/null && stats="${stats}▶${bash_n} "
+      stats=$(echo "$stats" | sed 's/ $//')
+      if [ -n "$stats" ] && [ -n "$text" ]; then
+        echo "${text} [${stats}]"
+      else
+        echo "$text"
+      fi
+      ;;
+    PermissionRequest)
+      # Extract the last tool_use that matches the tool_name
+      if [ -n "$TOOL_NAME" ] && [ -n "$transcript" ] && [ -f "$transcript" ]; then
+        local detail
+        detail=$(tail -50 "$transcript" \
+          | jq -r --arg tn "$TOOL_NAME" \
+            'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == $tn) | .input | tostring' 2>/dev/null \
+          | tail -1)
+        if [ -n "$detail" ]; then
+          # Extract meaningful short description from tool input
+          local short
+          case "$TOOL_NAME" in
+            Bash)
+              short=$(echo "$detail" | jq -r '.command // empty' 2>/dev/null)
+              ;;
+            Write|Read|Edit)
+              short=$(echo "$detail" | jq -r '.file_path // .path // empty' 2>/dev/null)
+              ;;
+            *)
+              short=$(echo "$detail" | jq -r 'to_entries[0].value // empty' 2>/dev/null | head -c 80)
+              ;;
+          esac
+          [ -n "$short" ] && echo "$short"
+        fi
+      fi
+      ;;
+    Notification)
+      # Notification events carry their own message
+      [ -n "$NOTIF_MESSAGE" ] && echo "$NOTIF_MESSAGE"
+      ;;
+  esac
+}
 
 # Desktop notification + bell
 # Default notify events: PermissionRequest, Notification, Stop
@@ -65,21 +143,48 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
   # Bell for PermissionRequest
   [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' > /dev/tty 2>/dev/null || true
 
+  # Extract summary from transcript (if available)
+  SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
+
   # Build notification title and message per event type
   case "$HOOK_EVENT" in
     PermissionRequest)
       TOOL_SUFFIX=""
       [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
       TITLE="⚠ Claude Code"
-      MESSAGE="Permission requested${TOOL_SUFFIX}"
+      if [ -n "$SUMMARY" ]; then
+        MESSAGE="$SUMMARY"
+      else
+        MESSAGE="Permission requested${TOOL_SUFFIX}"
+      fi
       ;;
     Notification)
-      TITLE="Claude Code"
-      MESSAGE="Notification received"
+      if [ -n "$NOTIF_TITLE" ]; then
+        TITLE="$NOTIF_TITLE"
+      else
+        TITLE="Claude Code"
+      fi
+      if [ -n "$SUMMARY" ]; then
+        MESSAGE="$SUMMARY"
+      else
+        MESSAGE="Notification received"
+      fi
       ;;
     Stop)
       TITLE="✅ Claude Code"
-      MESSAGE="Task completed"
+      if [ -n "$SUMMARY" ]; then
+        MESSAGE="$SUMMARY"
+      else
+        MESSAGE="Task completed"
+      fi
+      ;;
+    SubagentStop)
+      TITLE="🤖 Claude Code"
+      if [ -n "$SUMMARY" ]; then
+        MESSAGE="$SUMMARY"
+      else
+        MESSAGE="Subagent completed"
+      fi
       ;;
     *)
       TITLE="Claude Code"
