@@ -147,8 +147,9 @@ plugin location="zjbar.wasm" {
     separator_tab  ""     // \ue0b1
 
     // 行为
-    flash         "brief"    // persist | brief | off
-    elapsed_time  "true"     // true | false
+    flash         "brief"    // 权限请求时 tab 背景闪烁：
+                             //   brief = 闪烁 2 秒，persist = 持续到处理完毕，off = 不闪烁
+    elapsed_time  "true"     // 在每个 tab 上显示距上次 Claude Code 活动的耗时
 }
 ```
 

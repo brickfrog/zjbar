@@ -81,8 +81,8 @@ layout {
                 // separator_tab ""      // \ue0b1
 
                 // -- Behavior --
-                // flash "brief"            // persist | brief | off
-                // elapsed_time "true"      // true | false
+                // flash "brief"            // Tab flash on permission request: persist | brief | off
+                // elapsed_time "true"      // Show elapsed time since last activity: true | false
             }
         }
     }

@@ -147,8 +147,9 @@ plugin location="zjbar.wasm" {
     separator_tab  ""     // \ue0b1
 
     // Behavior
-    flash         "brief"    // persist | brief | off
-    elapsed_time  "true"     // true | false
+    flash         "brief"    // Tab background flash on permission request:
+                             //   brief = flash for 2s, persist = stay until resolved, off = no flash
+    elapsed_time  "true"     // Show elapsed time since last Claude Code activity per tab
 }
 ```
 

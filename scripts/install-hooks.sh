@@ -5,14 +5,7 @@
 #        CLAUDE_SETTINGS=/path/to/settings.json ./scripts/install-hooks.sh
 set -euo pipefail
 
-SETTINGS="${CLAUDE_SETTINGS:-}"
-if [ -z "$SETTINGS" ]; then
-  if [ -d "$HOME/.claude-internal" ]; then
-    SETTINGS="$HOME/.claude-internal/settings.json"
-  else
-    SETTINGS="$HOME/.claude/settings.json"
-  fi
-fi
+SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 HOOK_SCRIPT="$(cd "$(dirname "$0")" && pwd)/zjbar-hook.sh"
 
 if ! command -v jq &>/dev/null; then
