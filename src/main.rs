@@ -24,6 +24,7 @@ impl ZellijPlugin for State {
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
             PermissionType::MessageAndLaunchOtherPlugins,
+            PermissionType::RunCommands,
         ]);
         subscribe(&[
             EventType::TabUpdate,
@@ -32,6 +33,7 @@ impl ZellijPlugin for State {
             EventType::Timer,
             EventType::Mouse,
             EventType::PermissionRequestResult,
+            EventType::RunCommandResult,
         ]);
         set_timeout(TIMER_INTERVAL);
     }
