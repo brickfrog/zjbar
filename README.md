@@ -84,6 +84,20 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 brew install terminal-notifier
 ```
 
+When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default.
+
+You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json`:
+
+```json
+{
+  "notify_events": ["PermissionRequest", "Notification", "Stop"],
+  "notifications": "always"
+}
+```
+
+- **`notify_events`** — array of Claude Code hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
+- **`notifications`** — `always` | `unfocused` | `off` (default: `always`). When set to `unfocused`, notifications only fire when the terminal is not the frontmost app.
+
 ## Claude Code Activity Symbols
 
 | Symbol | Meaning                   |
@@ -129,7 +143,6 @@ plugin location="zjbar.wasm" {
     separator_tab  ""     // \ue0b1
 
     // Behavior
-    notifications "always"   // always | unfocused | off
     flash         "brief"    // persist | brief | off
     elapsed_time  "true"     // true | false
 }

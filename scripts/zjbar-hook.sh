@@ -39,22 +39,59 @@ PAYLOAD=$(jq -nc \
     term_program: (if $term_program == "" then null else $term_program end)
   }')
 
-# Permission request: bell + desktop notification
-if [ "$HOOK_EVENT" = "PermissionRequest" ]; then
-  printf '\a' > /dev/tty 2>/dev/null || true
+# Desktop notification + bell
+# Default notify events: PermissionRequest, Notification, Stop
+# Override via ~/.config/zellij/plugins/zjbar.json:
+#   { "notify_events": ["PermissionRequest", "Stop"], "notifications": "always" }
+SETTINGS_FILE="$HOME/.config/zellij/plugins/zjbar.json"
+DEFAULT_NOTIFY_EVENTS="PermissionRequest Notification Stop"
+NOTIFY_EVENTS="$DEFAULT_NOTIFY_EVENTS"
+NOTIFY_MODE="always"
 
-  # Read notification setting (default: Always)
-  SETTINGS_FILE="$HOME/.config/zellij/plugins/zjbar.json"
-  NOTIFY_MODE="Always"
-  if [ -f "$SETTINGS_FILE" ]; then
-    NOTIFY_MODE=$(jq -r '.notifications // "Always"' "$SETTINGS_FILE" 2>/dev/null)
-  fi
+if [ -f "$SETTINGS_FILE" ]; then
+  CUSTOM_EVENTS=$(jq -r '.notify_events // empty | join(" ")' "$SETTINGS_FILE" 2>/dev/null)
+  [ -n "$CUSTOM_EVENTS" ] && NOTIFY_EVENTS="$CUSTOM_EVENTS"
+  CUSTOM_MODE=$(jq -r '.notifications // empty' "$SETTINGS_FILE" 2>/dev/null)
+  [ -n "$CUSTOM_MODE" ] && NOTIFY_MODE=$(echo "$CUSTOM_MODE" | tr '[:upper:]' '[:lower:]')
+fi
 
-  # For "Unfocused" mode, check if the terminal app is frontmost
+# Check if current event is in the notify list
+IS_NOTIFY_EVENT=false
+for EVT in $NOTIFY_EVENTS; do
+  [ "$HOOK_EVENT" = "$EVT" ] && { IS_NOTIFY_EVENT=true; break; }
+done
+
+if [ "$IS_NOTIFY_EVENT" = true ]; then
+  # Bell for PermissionRequest
+  [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' > /dev/tty 2>/dev/null || true
+
+  # Build notification title and message per event type
+  case "$HOOK_EVENT" in
+    PermissionRequest)
+      TOOL_SUFFIX=""
+      [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
+      TITLE="⚠ Claude Code"
+      MESSAGE="Permission requested${TOOL_SUFFIX}"
+      ;;
+    Notification)
+      TITLE="Claude Code"
+      MESSAGE="Notification received"
+      ;;
+    Stop)
+      TITLE="✅ Claude Code"
+      MESSAGE="Task completed"
+      ;;
+    *)
+      TITLE="Claude Code"
+      MESSAGE="Event: $HOOK_EVENT"
+      ;;
+  esac
+
+  # For "unfocused" mode, check if the terminal app is frontmost
   SHOULD_NOTIFY=false
   case "$NOTIFY_MODE" in
-    Always) SHOULD_NOTIFY=true ;;
-    Unfocused)
+    always) SHOULD_NOTIFY=true ;;
+    unfocused)
       TERM_FOCUSED=false
       case "$(uname)" in
         Darwin)
@@ -89,11 +126,6 @@ if [ "$HOOK_EVENT" = "PermissionRequest" ]; then
   esac
 
   if [ "$SHOULD_NOTIFY" = true ]; then
-    TOOL_SUFFIX=""
-    [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
-    TITLE="⚠ Claude Code"
-    MESSAGE="Permission requested${TOOL_SUFFIX}"
-
     # Rate-limit: one notification per pane per 10 seconds
     LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
     NOW=$(date +%s)

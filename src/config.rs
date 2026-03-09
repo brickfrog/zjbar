@@ -32,24 +32,6 @@ fn get_bool(config: &BTreeMap<String, String>, key: &str, default: bool) -> bool
         .unwrap_or(default)
 }
 
-/// Notification mode parsed from config string.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum NotifyMode {
-    Always,
-    Unfocused,
-    Off,
-}
-
-impl NotifyMode {
-    fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "unfocused" => Self::Unfocused,
-            "off" | "never" | "false" => Self::Off,
-            _ => Self::Always,
-        }
-    }
-}
-
 /// Flash mode parsed from config string.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FlashMode {
@@ -183,7 +165,6 @@ pub struct BarConfig {
     pub separator_tab: String,
 
     // Behavior
-    pub notifications: NotifyMode,
     pub flash: FlashMode,
     pub elapsed_time: bool,
 }
@@ -250,10 +231,6 @@ impl BarConfig {
             separator_right: get_str(config, "separator_right", "\u{e0b2}").to_string(),
             separator_tab: get_str(config, "separator_tab", "\u{e0b1}").to_string(),
 
-            notifications: config
-                .get("notifications")
-                .map(|v| NotifyMode::from_str(v))
-                .unwrap_or(NotifyMode::Always),
             flash: config
                 .get("flash")
                 .map(|v| FlashMode::from_str(v))

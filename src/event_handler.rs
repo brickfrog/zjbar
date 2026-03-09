@@ -1,7 +1,5 @@
-use crate::config::{FlashMode, NotifyMode};
+use crate::config::FlashMode;
 use crate::state::{Activity, HookPayload, SessionInfo, State};
-use std::collections::BTreeMap;
-use zellij_tile::prelude::*;
 
 pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
     // Capture env info for use in notifications
@@ -70,49 +68,6 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
                 state.flash_deadlines.insert(payload.pane_id, u64::MAX);
             }
             FlashMode::Off => {}
-        }
-
-        // Desktop notification via terminal-notifier
-        let should_notify = match state.config.notifications {
-            NotifyMode::Always => true,
-            NotifyMode::Unfocused => {
-                // Notify only if the waiting session's tab is not the active tab
-                let session_tab = state
-                    .pane_to_tab
-                    .get(&payload.pane_id)
-                    .map(|(idx, _)| *idx);
-                session_tab != state.active_tab_index
-            }
-            NotifyMode::Off => false,
-        };
-        if should_notify {
-            let tab_label = state
-                .pane_to_tab
-                .get(&payload.pane_id)
-                .map(|(_, name)| name.as_str())
-                .unwrap_or("unknown");
-            let title = "Claude Code - Permission Request";
-            let message = format!("Waiting for permission in tab: {}", tab_label);
-            let mut cmd_args = vec![
-                "terminal-notifier".to_string(),
-                "-title".to_string(),
-                title.to_string(),
-                "-message".to_string(),
-                message,
-                "-sender".to_string(),
-                "dev.zellij.zellij".to_string(),
-            ];
-            // Click notification to pipe focus event
-            if let Some(ref zj_session) = state.zellij_session_name {
-                let focus_cmd = format!(
-                    "zellij --session {} pipe --name zjbar:focus -- {}",
-                    zj_session, payload.pane_id
-                );
-                cmd_args.push("-execute".to_string());
-                cmd_args.push(focus_cmd);
-            }
-            let args: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
-            run_command(&args, BTreeMap::new());
         }
     } else {
         state.flash_deadlines.remove(&payload.pane_id);

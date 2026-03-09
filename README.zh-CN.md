@@ -84,6 +84,20 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 brew install terminal-notifier
 ```
 
+安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。
+
+可以通过 `~/.config/zellij/plugins/zjbar.json` 自定义通知事件和通知模式：
+
+```json
+{
+  "notify_events": ["PermissionRequest", "Notification", "Stop"],
+  "notifications": "always"
+}
+```
+
+- **`notify_events`** — 触发通知的 Claude Code hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
+- **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。设为 `unfocused` 时，仅在终端不在前台时发送通知。
+
 ## Claude Code 活动符号
 
 | 符号 | 含义                |
@@ -129,7 +143,6 @@ plugin location="zjbar.wasm" {
     separator_tab  ""     // \ue0b1
 
     // 行为
-    notifications "always"   // always | unfocused | off
     flash         "brief"    // persist | brief | off
     elapsed_time  "true"     // true | false
 }
