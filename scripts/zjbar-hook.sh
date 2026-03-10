@@ -51,69 +51,69 @@ extract_summary() {
   [ -z "$transcript" ] || [ ! -f "$transcript" ] && return
 
   case "$event" in
-    Stop|SubagentStop)
-      # Get last assistant message text, clean markdown, truncate
-      local text
-      text=$(tail -100 "$transcript" \
-        | jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' 2>/dev/null \
-        | tail -1)
-      [ -z "$text" ] && return
-      # Strip markdown formatting
-      text=$(echo "$text" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
-      # Truncate to 120 chars at word boundary
-      if [ ${#text} -gt 120 ]; then
-        text="${text:0:117}"
-        text="${text% *}..."
+  Stop | SubagentStop)
+    # Get last assistant message text, clean markdown, truncate
+    local text
+    text=$(tail -100 "$transcript" |
+      jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' 2>/dev/null |
+      tail -1)
+    [ -z "$text" ] && return
+    # Strip markdown formatting
+    text=$(echo "$text" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
+    # Truncate to 120 chars at word boundary
+    if [ ${#text} -gt 120 ]; then
+      text="${text:0:117}"
+      text="${text% *}..."
+    fi
+    # Count tool usage in recent messages
+    local tools
+    tools=$(tail -200 "$transcript" |
+      jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null)
+    local write_n edit_n bash_n
+    write_n=$(echo "$tools" | grep -c '^Write$' 2>/dev/null || echo 0)
+    edit_n=$(echo "$tools" | grep -c '^Edit$' 2>/dev/null || echo 0)
+    bash_n=$(echo "$tools" | grep -c '^Bash$' 2>/dev/null || echo 0)
+    local stats=""
+    [ "$write_n" -gt 0 ] 2>/dev/null && stats="${stats}📝${write_n} "
+    [ "$edit_n" -gt 0 ] 2>/dev/null && stats="${stats}✏️${edit_n} "
+    [ "$bash_n" -gt 0 ] 2>/dev/null && stats="${stats}▶${bash_n} "
+    stats=$(echo "$stats" | sed 's/ $//')
+    if [ -n "$stats" ] && [ -n "$text" ]; then
+      echo "${text} [${stats}]"
+    else
+      echo "$text"
+    fi
+    ;;
+  PermissionRequest)
+    # Extract the last tool_use that matches the tool_name
+    if [ -n "$TOOL_NAME" ] && [ -n "$transcript" ] && [ -f "$transcript" ]; then
+      local detail
+      detail=$(tail -50 "$transcript" |
+        jq -r --arg tn "$TOOL_NAME" \
+          'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == $tn) | .input | tostring' 2>/dev/null |
+        tail -1)
+      if [ -n "$detail" ]; then
+        # Extract meaningful short description from tool input
+        local short
+        case "$TOOL_NAME" in
+        Bash)
+          short=$(echo "$detail" | jq -r '.command // empty' 2>/dev/null)
+          ;;
+        Write | Read | Edit)
+          short=$(echo "$detail" | jq -r '.file_path // .path // empty' 2>/dev/null)
+          ;;
+        *)
+          short=$(echo "$detail" | jq -r 'to_entries[0].value // empty' 2>/dev/null | head -c 80)
+          ;;
+        esac
+        [ -n "$short" ] && echo "$short"
       fi
-      # Count tool usage in recent messages
-      local tools
-      tools=$(tail -200 "$transcript" \
-        | jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null)
-      local write_n edit_n bash_n
-      write_n=$(echo "$tools" | grep -c '^Write$' 2>/dev/null || echo 0)
-      edit_n=$(echo "$tools" | grep -c '^Edit$' 2>/dev/null || echo 0)
-      bash_n=$(echo "$tools" | grep -c '^Bash$' 2>/dev/null || echo 0)
-      local stats=""
-      [ "$write_n" -gt 0 ] 2>/dev/null && stats="${stats}📝${write_n} "
-      [ "$edit_n" -gt 0 ] 2>/dev/null && stats="${stats}✏️${edit_n} "
-      [ "$bash_n" -gt 0 ] 2>/dev/null && stats="${stats}▶${bash_n} "
-      stats=$(echo "$stats" | sed 's/ $//')
-      if [ -n "$stats" ] && [ -n "$text" ]; then
-        echo "${text} [${stats}]"
-      else
-        echo "$text"
-      fi
-      ;;
-    PermissionRequest)
-      # Extract the last tool_use that matches the tool_name
-      if [ -n "$TOOL_NAME" ] && [ -n "$transcript" ] && [ -f "$transcript" ]; then
-        local detail
-        detail=$(tail -50 "$transcript" \
-          | jq -r --arg tn "$TOOL_NAME" \
-            'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == $tn) | .input | tostring' 2>/dev/null \
-          | tail -1)
-        if [ -n "$detail" ]; then
-          # Extract meaningful short description from tool input
-          local short
-          case "$TOOL_NAME" in
-            Bash)
-              short=$(echo "$detail" | jq -r '.command // empty' 2>/dev/null)
-              ;;
-            Write|Read|Edit)
-              short=$(echo "$detail" | jq -r '.file_path // .path // empty' 2>/dev/null)
-              ;;
-            *)
-              short=$(echo "$detail" | jq -r 'to_entries[0].value // empty' 2>/dev/null | head -c 80)
-              ;;
-          esac
-          [ -n "$short" ] && echo "$short"
-        fi
-      fi
-      ;;
-    Notification)
-      # Notification events carry their own message
-      [ -n "$NOTIF_MESSAGE" ] && echo "$NOTIF_MESSAGE"
-      ;;
+    fi
+    ;;
+  Notification)
+    # Notification events carry their own message
+    [ -n "$NOTIF_MESSAGE" ] && echo "$NOTIF_MESSAGE"
+    ;;
   esac
 }
 
@@ -136,105 +136,112 @@ fi
 # Check if current event is in the notify list
 IS_NOTIFY_EVENT=false
 for EVT in $NOTIFY_EVENTS; do
-  [ "$HOOK_EVENT" = "$EVT" ] && { IS_NOTIFY_EVENT=true; break; }
+  [ "$HOOK_EVENT" = "$EVT" ] && {
+    IS_NOTIFY_EVENT=true
+    break
+  }
 done
 
 if [ "$IS_NOTIFY_EVENT" = true ]; then
   # Bell for PermissionRequest
-  [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' > /dev/tty 2>/dev/null || true
+  [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' >/dev/tty 2>/dev/null || true
 
   # Extract summary from transcript (if available)
   SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
 
-  # Detect app variant from settings dir
+  # Detect app variant: check CLAUDE_SETTINGS_DIR or CodeBuddy-specific env vars
   APP_NAME="Claude Code"
   ICON_FILE="claude-logo.png"
-  case "${CLAUDE_SETTINGS_DIR:-}" in
-    *codebuddy*) APP_NAME="CodeBuddy"; ICON_FILE="codebuddy-logo.png" ;;
-  esac
+  if [ -n "${CODEBUDDY_PROJECT_DIR:-}" ]; then
+    APP_NAME="CodeBuddy"
+    ICON_FILE="codebuddy-logo.png"
+  fi
 
   # Build notification title and message per event type
   case "$HOOK_EVENT" in
-    PermissionRequest)
-      TOOL_SUFFIX=""
-      [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
-      TITLE="⚠ $APP_NAME"
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Permission requested${TOOL_SUFFIX}"
-      fi
-      ;;
-    Notification)
-      if [ -n "$NOTIF_TITLE" ]; then
-        TITLE="$NOTIF_TITLE"
-      else
-        TITLE="$APP_NAME"
-      fi
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Notification received"
-      fi
-      ;;
-    Stop)
-      TITLE="✅ $APP_NAME"
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Task completed"
-      fi
-      ;;
-    SubagentStop)
-      TITLE="🤖 $APP_NAME"
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Subagent completed"
-      fi
-      ;;
-    *)
+  PermissionRequest)
+    TOOL_SUFFIX=""
+    [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
+    TITLE="⚠ $APP_NAME"
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Permission requested${TOOL_SUFFIX}"
+    fi
+    ;;
+  Notification)
+    if [ -n "$NOTIF_TITLE" ]; then
+      TITLE="$NOTIF_TITLE"
+    else
       TITLE="$APP_NAME"
-      MESSAGE="Event: $HOOK_EVENT"
-      ;;
+    fi
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Notification received"
+    fi
+    ;;
+  Stop)
+    TITLE="✅ $APP_NAME"
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Task completed"
+    fi
+    ;;
+  SubagentStop)
+    TITLE="🤖 $APP_NAME"
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Subagent completed"
+    fi
+    ;;
+  *)
+    TITLE="$APP_NAME"
+    MESSAGE="Event: $HOOK_EVENT"
+    ;;
   esac
 
   # For "unfocused" mode, check if the terminal app is frontmost
   SHOULD_NOTIFY=false
   case "$NOTIFY_MODE" in
-    always) SHOULD_NOTIFY=true ;;
-    unfocused)
-      TERM_FOCUSED=false
-      case "$(uname)" in
-        Darwin)
-          # Map TERM_PROGRAM to macOS process name
-          EXPECTED="${TERM_PROGRAM:-}"
-          case "$EXPECTED" in
-            Apple_Terminal) EXPECTED="Terminal" ;;
-            iTerm.app)     EXPECTED="iTerm2" ;;
-          esac
-          FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-          [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-          ;;
-        Linux)
-          # X11: check if focused window belongs to our terminal
-          if command -v xdotool >/dev/null 2>&1; then
-            ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-            if [ -n "$ACTIVE_PID" ]; then
-              # Walk up the process tree from our shell to see if the
-              # focused window's process is an ancestor (i.e. our terminal)
-              PID=$$
-              while [ "$PID" -gt 1 ] 2>/dev/null; do
-                [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
-                PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-              done
-            fi
-          fi
-          # Wayland: no standard way to check; fall through to not-focused
-          ;;
+  always) SHOULD_NOTIFY=true ;;
+  unfocused)
+    TERM_FOCUSED=false
+    case "$(uname)" in
+    Darwin)
+      # Map TERM_PROGRAM to macOS process name
+      EXPECTED="${TERM_PROGRAM:-}"
+      case "$EXPECTED" in
+      Apple_Terminal) EXPECTED="Terminal" ;;
+      iTerm.app) EXPECTED="iTerm2" ;;
       esac
-      [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
+      FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
+      [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
       ;;
+    Linux)
+      # X11: check if focused window belongs to our terminal
+      if command -v xdotool >/dev/null 2>&1; then
+        ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
+        if [ -n "$ACTIVE_PID" ]; then
+          # Walk up the process tree from our shell to see if the
+          # focused window's process is an ancestor (i.e. our terminal)
+          PID=$$
+          while [ "$PID" -gt 1 ] 2>/dev/null; do
+            [ "$PID" = "$ACTIVE_PID" ] && {
+              TERM_FOCUSED=true
+              break
+            }
+            PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
+          done
+        fi
+      fi
+      # Wayland: no standard way to check; fall through to not-focused
+      ;;
+    esac
+    [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
+    ;;
   esac
 
   if [ "$SHOULD_NOTIFY" = true ]; then
@@ -244,33 +251,33 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     LAST=0
     [ -f "$LOCK" ] && LAST=$(cat "$LOCK" 2>/dev/null)
     if [ $((NOW - LAST)) -ge 10 ]; then
-      echo "$NOW" > "$LOCK"
+      echo "$NOW" >"$LOCK"
 
       # Click callback: activate terminal + focus the pane
       ZELLIJ_BIN=$(command -v zellij)
       FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
 
       case "$(uname)" in
-        Darwin)
-          [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
-          ICON_FLAG=()
-          [ -f "$ICON_PATH" ] && ICON_FLAG=(-appIcon "$ICON_PATH")
-          if command -v terminal-notifier >/dev/null 2>&1; then
-            terminal-notifier \
-              "${ICON_FLAG[@]}" \
-              -title "$TITLE" \
-              -message "$MESSAGE" \
-              -execute "$FOCUS_CMD" &
-          else
-            osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-          fi
-          ;;
-        Linux)
-          if command -v notify-send >/dev/null 2>&1; then
-            notify-send "$TITLE" "$MESSAGE" &
-          fi
-          ;;
+      Darwin)
+        [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
+        ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
+        ICON_FLAG=()
+        [ -f "$ICON_PATH" ] && ICON_FLAG=(-appIcon "$ICON_PATH")
+        if command -v terminal-notifier >/dev/null 2>&1; then
+          terminal-notifier \
+            "${ICON_FLAG[@]}" \
+            -title "$TITLE" \
+            -message "$MESSAGE" \
+            -execute "$FOCUS_CMD" &
+        else
+          osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
+        fi
+        ;;
+      Linux)
+        if command -v notify-send >/dev/null 2>&1; then
+          notify-send "$TITLE" "$MESSAGE" &
+        fi
+        ;;
       esac
     fi
   fi
