@@ -9,6 +9,7 @@ build:
 	cargo build --release
 	@mkdir -p $(PLUGIN_DIR)
 	cp $(WASM) $(PLUGIN_DIR)/zjbar.wasm
+	cp assets/claude-logo.png $(PLUGIN_DIR)/claude-logo.png 2>/dev/null
 
 install-layouts:
 	@mkdir -p $(LAYOUT_DIR)

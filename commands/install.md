@@ -26,6 +26,10 @@ else
   exit 1
 fi
 
+# Install notification icon
+echo "Downloading notification icon..."
+curl -fsSL "$BASE_URL/assets/claude-logo.png" -o "$PLUGIN_DIR/claude-logo.png" || true
+
 # Install layout files
 mkdir -p "$LAYOUT_DIR"
 echo "Downloading layouts..."

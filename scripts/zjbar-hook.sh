@@ -246,8 +246,12 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       case "$(uname)" in
         Darwin)
           [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
+          ICON_PATH="$HOME/.config/zellij/plugins/claude-logo.png"
+          ICON_FLAG=()
+          [ -f "$ICON_PATH" ] && ICON_FLAG=(-appIcon "$ICON_PATH")
           if command -v terminal-notifier >/dev/null 2>&1; then
             terminal-notifier \
+              "${ICON_FLAG[@]}" \
               -title "$TITLE" \
               -message "$MESSAGE" \
               -execute "$FOCUS_CMD" &
