@@ -134,5 +134,6 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 2. **`README.md`** — WASM download URL in the layout example (`releases/download/vX.Y.Z/zjbar.wasm`)
 3. **`README.zh-CN.md`** — same WASM download URL
 4. **`commands/install.md`** — WASM download URL in the curl command
+5. **`.claude-plugin/marketplace.json`** — both `version` fields
 
 Use `grep -r 'releases/download/v' .` to verify all URLs are updated.
