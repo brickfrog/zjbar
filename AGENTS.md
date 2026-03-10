@@ -138,3 +138,5 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 6. **`.claude-plugin/plugin.json`** — `version` field
 
 Use `grep -r 'releases/download/v' .` to verify all URLs are updated.
+
+**Note:** `Cargo.lock` is auto-updated by `cargo build` when `Cargo.toml` version changes. Remember to `git add Cargo.lock` when committing the version bump.
