@@ -45,7 +45,8 @@ uninstall() {
         .value |= [
           .[] | . as $group |
           ($group.hooks // []) | map(select(.command != $cmd)) |
-          if length > 0 then ($group | .hooks = .) else empty end
+          . as $filtered |
+          if length > 0 then ($group | .hooks = $filtered) else empty end
         ]
       ) | .hooks |= with_entries(select(.value | length > 0)) |
       if .hooks == {} then del(.hooks) else . end
