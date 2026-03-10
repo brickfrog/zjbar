@@ -79,6 +79,10 @@ layout {
                 // separator_left ""     // \ue0b0
                 // separator_right ""    // \ue0b2
                 // separator_tab ""      // \ue0b1
+
+                // -- Tab indicators --
+                // tab_fullscreen_indicator " 󰊓"
+                // tab_floating_indicator " 󰹙"
             }
         }
     }

@@ -135,6 +135,10 @@ pub struct BarConfig {
     // Elapsed time color
     pub elapsed_fg: Color,
 
+    // Tab indicators
+    pub tab_fullscreen_indicator: String,
+    pub tab_floating_indicator: String,
+
     // Separators
     pub separator_left: String,
     pub separator_right: String,
@@ -198,6 +202,9 @@ impl BarConfig {
             activity_prompt_color: get_color(config, "activity_prompt_color", D_ACTIVITY_PROMPT),
 
             elapsed_fg: get_color(config, "elapsed_fg", D_ELAPSED_FG),
+
+            tab_fullscreen_indicator: get_str(config, "tab_fullscreen_indicator", " 󰊓").to_string(),
+            tab_floating_indicator: get_str(config, "tab_floating_indicator", " 󰹙").to_string(),
 
             separator_left: get_str(config, "separator_left", "\u{e0b0}").to_string(),
             separator_right: get_str(config, "separator_right", "\u{e0b2}").to_string(),

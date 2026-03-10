@@ -151,6 +151,10 @@ plugin location="zjbar.wasm" {
     // 分隔符（powerline 字符）
     separator_left ""     // \ue0b0
     separator_tab  ""     // \ue0b1
+
+    // Tab 指示器（全屏/浮动窗格时显示）
+    tab_fullscreen_indicator " 󰊓"
+    tab_floating_indicator " 󰹙"
 }
 ```
 

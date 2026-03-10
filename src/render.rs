@@ -332,7 +332,14 @@ fn render_tabs(
         .map(|e| e.as_ref().map_or(0, |s| 1 + s.len()))
         .sum();
 
-    let overhead = *col + fixed_per_tab + claude_overhead + elapsed_overhead + count;
+    let indicator_overhead: usize = tabs.iter().map(|t| {
+        let mut w = 0;
+        if t.is_fullscreen_active { w += display_width(&cfg.tab_fullscreen_indicator); }
+        if t.are_floating_panes_visible { w += display_width(&cfg.tab_floating_indicator); }
+        w
+    }).sum();
+
+    let overhead = *col + fixed_per_tab + claude_overhead + elapsed_overhead + indicator_overhead + count;
     let max_name_len = if overhead < cols {
         ((cols - overhead) / count).min(20)
     } else {
@@ -436,6 +443,18 @@ fn render_tabs(
         if !truncated.is_empty() {
             let _ = write!(buf, "{truncated}");
             *col += display_width(&truncated);
+        }
+
+        // Fullscreen / floating indicators
+        if tab.is_fullscreen_active {
+            let ind = &cfg.tab_fullscreen_indicator;
+            let _ = write!(buf, "{ind}");
+            *col += display_width(ind);
+        }
+        if tab.are_floating_panes_visible {
+            let ind = &cfg.tab_floating_indicator;
+            let _ = write!(buf, "{ind}");
+            *col += display_width(ind);
         }
 
         // Claude activity indicator

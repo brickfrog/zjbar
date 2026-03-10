@@ -151,6 +151,10 @@ plugin location="zjbar.wasm" {
     // Separators (powerline characters)
     separator_left ""     // \ue0b0
     separator_tab  ""     // \ue0b1
+
+    // Tab indicators (shown when pane is fullscreen / floating)
+    tab_fullscreen_indicator " 󰊓"
+    tab_floating_indicator " 󰹙"
 }
 ```
 
