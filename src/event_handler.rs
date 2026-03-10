@@ -1,5 +1,4 @@
-use crate::config::FlashMode;
-use crate::state::{Activity, HookPayload, SessionInfo, State};
+use crate::state::{Activity, FlashMode, HookPayload, SessionInfo, State};
 
 pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
     // Capture env info for use in notifications
@@ -57,7 +56,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         });
 
     if matches!(activity, Activity::Waiting) {
-        match state.config.flash {
+        match state.settings.flash {
             FlashMode::Brief => {
                 state.flash_deadlines.insert(
                     payload.pane_id,

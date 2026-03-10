@@ -72,7 +72,7 @@ make uninstall     # remove plugin and layouts
 make release       # create GitHub release (requires tag on HEAD)
 ```
 
-The hook installer auto-detects the settings path (`~/.claude-internal/settings.json` or `~/.claude/settings.json`). To specify a custom path:
+The hook installer auto-detects the settings path (`~/.claude/settings.json`). To specify a custom path:
 
 ```bash
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
@@ -90,17 +90,21 @@ When installed, desktop notifications are sent for `PermissionRequest`, `Notific
 - **PermissionRequest** — the specific command or file path being requested
 - **Notification** — the notification message from Claude Code
 
-You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json`:
+You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json` or the **settings menu** (click the session name in the status bar):
 
 ```json
 {
-  "notify_events": ["PermissionRequest", "Notification", "Stop"],
-  "notifications": "always"
+  "flash": "brief",
+  "elapsed_time": true,
+  "notifications": "always",
+  "notify_events": ["PermissionRequest", "Notification", "Stop"]
 }
 ```
 
-- **`notify_events`** — array of Claude Code hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
+- **`flash`** — `brief` | `persist` | `off` (default: `brief`). Tab background flash on permission request.
+- **`elapsed_time`** — `true` | `false` (default: `true`). Show elapsed time since last Claude Code activity per tab.
 - **`notifications`** — `always` | `unfocused` | `off` (default: `always`). When set to `unfocused`, notifications only fire when the terminal is not the frontmost app.
+- **`notify_events`** — array of Claude Code hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
 
 ## Claude Code Activity Symbols
 
@@ -120,7 +124,9 @@ You can customize which events trigger notifications and the notification mode v
 
 ## Configuration
 
-All visual and behavioral settings are configured via the KDL layout file. Every option is optional — defaults use the Tokyo Night theme.
+All visual settings are configured via the KDL layout file. Every option is optional — defaults use the Tokyo Night theme.
+
+Behavioral settings (`flash`, `elapsed_time`, `notifications`) are stored in `~/.config/zellij/plugins/zjbar.json` and can be changed at runtime via the settings menu (click the session name).
 
 ```kdl
 plugin location="zjbar.wasm" {
@@ -145,11 +151,6 @@ plugin location="zjbar.wasm" {
     // Separators (powerline characters)
     separator_left ""     // \ue0b0
     separator_tab  ""     // \ue0b1
-
-    // Behavior
-    flash         "brief"    // Tab background flash on permission request:
-                             //   brief = flash for 2s, persist = stay until resolved, off = no flash
-    elapsed_time  "true"     // Show elapsed time since last Claude Code activity per tab
 }
 ```
 

@@ -72,7 +72,7 @@ make uninstall     # 移除插件和布局文件
 make release       # 创建 GitHub release（需要 HEAD 上有 tag）
 ```
 
-hook 安装脚本会自动检测设置文件路径（`~/.claude-internal/settings.json` 或 `~/.claude/settings.json`）。如需指定自定义路径：
+hook 安装脚本会自动使用设置文件路径 `~/.claude/settings.json`。如需指定自定义路径：
 
 ```bash
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
@@ -90,17 +90,21 @@ brew install terminal-notifier
 - **PermissionRequest** — 请求权限的具体命令或文件路径
 - **Notification** — Claude Code 发送的通知消息
 
-可以通过 `~/.config/zellij/plugins/zjbar.json` 自定义通知事件和通知模式：
+可以通过 `~/.config/zellij/plugins/zjbar.json` 或**设置菜单**（点击状态栏中的 session 名称）自定义通知事件和通知模式：
 
 ```json
 {
-  "notify_events": ["PermissionRequest", "Notification", "Stop"],
-  "notifications": "always"
+  "flash": "brief",
+  "elapsed_time": true,
+  "notifications": "always",
+  "notify_events": ["PermissionRequest", "Notification", "Stop"]
 }
 ```
 
-- **`notify_events`** — 触发通知的 Claude Code hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
+- **`flash`** — `brief` | `persist` | `off`（默认：`brief`）。权限请求时 tab 背景闪烁模式。
+- **`elapsed_time`** — `true` | `false`（默认：`true`）。在每个 tab 上显示距上次 Claude Code 活动的耗时。
 - **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。设为 `unfocused` 时，仅在终端不在前台时发送通知。
+- **`notify_events`** — 触发通知的 Claude Code hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
 
 ## Claude Code 活动符号
 
@@ -120,7 +124,9 @@ brew install terminal-notifier
 
 ## 配置
 
-所有视觉和行为设置均通过 KDL 布局文件配置。每个选项都是可选的 — 默认使用 Tokyo Night 主题。
+所有视觉设置均通过 KDL 布局文件配置。每个选项都是可选的 — 默认使用 Tokyo Night 主题。
+
+行为设置（`flash`、`elapsed_time`、`notifications`）存储在 `~/.config/zellij/plugins/zjbar.json` 中，可通过设置菜单（点击 session 名称）在运行时修改。
 
 ```kdl
 plugin location="zjbar.wasm" {
@@ -145,11 +151,6 @@ plugin location="zjbar.wasm" {
     // 分隔符（powerline 字符）
     separator_left ""     // \ue0b0
     separator_tab  ""     // \ue0b1
-
-    // 行为
-    flash         "brief"    // 权限请求时 tab 背景闪烁：
-                             //   brief = 闪烁 2 秒，persist = 持续到处理完毕，off = 不闪烁
-    elapsed_time  "true"     // 在每个 tab 上显示距上次 Claude Code 活动的耗时
 }
 ```
 

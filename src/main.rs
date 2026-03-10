@@ -5,7 +5,10 @@ mod state;
 mod tab_pane_map;
 
 use config::BarConfig;
-use state::{unix_now, unix_now_ms, HookPayload, SessionInfo, State};
+use state::{
+    unix_now, unix_now_ms, HookPayload, MenuAction, SessionInfo, Settings, SettingKey, State,
+    ViewMode,
+};
 use std::collections::BTreeMap;
 use zellij_tile::prelude::*;
 
@@ -24,6 +27,7 @@ impl ZellijPlugin for State {
             PermissionType::ChangeApplicationState,
             PermissionType::ReadCliPipes,
             PermissionType::MessageAndLaunchOtherPlugins,
+            PermissionType::RunCommands,
         ]);
         subscribe(&[
             EventType::TabUpdate,
@@ -32,8 +36,10 @@ impl ZellijPlugin for State {
             EventType::Timer,
             EventType::Mouse,
             EventType::PermissionRequestResult,
+            EventType::RunCommandResult,
         ]);
         set_timeout(TIMER_INTERVAL);
+        self.load_config();
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -64,17 +70,63 @@ impl ZellijPlugin for State {
             }
             Event::Mouse(Mouse::LeftClick(_, col)) => {
                 let col = col as usize;
-                for region in &self.click_regions {
-                    if col >= region.start_col && col < region.end_col {
-                        if region.is_waiting {
-                            focus_terminal_pane(region.pane_id, false);
-                        } else {
-                            switch_tab_to(region.tab_index as u32 + 1);
-                        }
-                        return false;
+
+                // Check prefix click → toggle settings menu
+                if let Some((start, end)) = self.prefix_click_region {
+                    if col >= start && col < end {
+                        self.view_mode = match self.view_mode {
+                            ViewMode::Normal => ViewMode::Settings,
+                            ViewMode::Settings => ViewMode::Normal,
+                        };
+                        return true;
                     }
                 }
-                false
+
+                match self.view_mode {
+                    ViewMode::Normal => {
+                        for region in &self.click_regions {
+                            if col >= region.start_col && col < region.end_col {
+                                if region.is_waiting {
+                                    focus_terminal_pane(region.pane_id, false);
+                                } else {
+                                    switch_tab_to(region.tab_index as u32 + 1);
+                                }
+                                return false;
+                            }
+                        }
+                        false
+                    }
+                    ViewMode::Settings => {
+                        for region in &self.menu_click_regions {
+                            if col >= region.start_col && col < region.end_col {
+                                match &region.action {
+                                    MenuAction::ToggleSetting(key) => {
+                                        match key {
+                                            SettingKey::Flash => {
+                                                self.settings.flash =
+                                                    self.settings.flash.cycle();
+                                            }
+                                            SettingKey::ElapsedTime => {
+                                                self.settings.elapsed_time =
+                                                    !self.settings.elapsed_time;
+                                            }
+                                            SettingKey::Notifications => {
+                                                self.settings.notifications =
+                                                    self.settings.notifications.cycle();
+                                            }
+                                        }
+                                        self.save_config();
+                                    }
+                                    MenuAction::CloseMenu => {
+                                        self.view_mode = ViewMode::Normal;
+                                    }
+                                }
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                }
             }
             Event::Timer(_) => {
                 let stale_changed = self.cleanup_stale_sessions();
@@ -87,8 +139,24 @@ impl ZellijPlugin for State {
                 }
                 has_flashes || stale_changed || flash_changed || self.has_elapsed_display()
             }
+            Event::RunCommandResult(exit_code, stdout, _stderr, context) => {
+                match context.get("type").map(|s| s.as_str()) {
+                    Some("load_config") if exit_code == Some(0) => {
+                        let raw = String::from_utf8_lossy(&stdout);
+                        if let Ok(settings) = serde_json::from_str::<Settings>(raw.trim()) {
+                            self.settings = settings;
+                        }
+                        self.config_loaded = true;
+                    }
+                    _ => {}
+                }
+                true
+            }
             Event::PermissionRequestResult(_) => {
                 set_selectable(false);
+                if !self.config_loaded {
+                    self.load_config();
+                }
                 self.request_sync();
                 false
             }
@@ -128,6 +196,16 @@ impl ZellijPlugin for State {
                         serde_json::from_str::<BTreeMap<u32, SessionInfo>>(payload)
                     {
                         self.merge_sessions(sessions);
+                        return true;
+                    }
+                }
+                false
+            }
+            "zjbar:settings" => {
+                if let Some(ref payload) = pipe_message.payload {
+                    if let Ok(settings) = serde_json::from_str::<Settings>(payload) {
+                        self.settings = settings;
+                        self.config_loaded = true;
                         return true;
                     }
                 }
@@ -207,7 +285,7 @@ impl State {
     }
 
     fn has_elapsed_display(&self) -> bool {
-        if !self.config.elapsed_time {
+        if !self.settings.elapsed_time {
             return false;
         }
         let now = unix_now();
@@ -228,6 +306,13 @@ impl State {
         pipe_message_to_plugin(msg);
     }
 
+    fn broadcast_settings(&self) {
+        let mut msg = MessageToPlugin::new("zjbar:settings");
+        msg.message_payload =
+            Some(serde_json::to_string(&self.settings).unwrap_or_default());
+        pipe_message_to_plugin(msg);
+    }
+
     fn merge_sessions(&mut self, incoming: BTreeMap<u32, SessionInfo>) {
         for (pane_id, mut session) in incoming {
             let dominated = self
@@ -243,5 +328,34 @@ impl State {
                 self.sessions.insert(pane_id, session);
             }
         }
+    }
+
+    fn load_config(&self) {
+        let mut ctx = BTreeMap::new();
+        ctx.insert("type".into(), "load_config".into());
+        run_command(
+            &[
+                "sh",
+                "-c",
+                "cat \"$HOME/.config/zellij/plugins/zjbar.json\" 2>/dev/null || echo '{}'",
+            ],
+            ctx,
+        );
+    }
+
+    fn save_config(&self) {
+        if !self.config_loaded {
+            return;
+        }
+        self.broadcast_settings();
+        let json = serde_json::to_string(&self.settings).unwrap_or_default();
+        let json_esc = json.replace('\'', "'\\''");
+        let cmd = format!(
+            "mkdir -p \"$HOME/.config/zellij/plugins\" && printf '%s' '{}' > \"$HOME/.config/zellij/plugins/zjbar.json\"",
+            json_esc
+        );
+        let mut ctx = BTreeMap::new();
+        ctx.insert("type".into(), "save_config".into());
+        run_command(&["sh", "-c", &cmd], ctx);
     }
 }

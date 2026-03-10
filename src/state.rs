@@ -55,6 +55,128 @@ pub struct HookPayload {
     pub term_program: Option<String>,
 }
 
+// -- Flash mode --
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FlashMode {
+    Brief,
+    Persist,
+    Off,
+}
+
+impl Default for FlashMode {
+    fn default() -> Self {
+        Self::Brief
+    }
+}
+
+impl FlashMode {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Brief => Self::Persist,
+            Self::Persist => Self::Off,
+            Self::Off => Self::Brief,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Brief => "brief",
+            Self::Persist => "persist",
+            Self::Off => "off",
+        }
+    }
+}
+
+// -- Notify mode --
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotifyMode {
+    Always,
+    Unfocused,
+    Off,
+}
+
+impl Default for NotifyMode {
+    fn default() -> Self {
+        Self::Always
+    }
+}
+
+impl NotifyMode {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Always => Self::Unfocused,
+            Self::Unfocused => Self::Off,
+            Self::Off => Self::Always,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Unfocused => "unfocused",
+            Self::Off => "off",
+        }
+    }
+}
+
+// -- Persisted settings (stored in zjbar.json) --
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    pub flash: FlashMode,
+    pub elapsed_time: bool,
+    pub notifications: NotifyMode,
+    pub notify_events: Vec<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            flash: FlashMode::Brief,
+            elapsed_time: true,
+            notifications: NotifyMode::Always,
+            notify_events: vec![
+                "PermissionRequest".into(),
+                "Notification".into(),
+                "Stop".into(),
+            ],
+        }
+    }
+}
+
+// -- Settings menu types --
+
+#[derive(Default, PartialEq)]
+pub enum ViewMode {
+    #[default]
+    Normal,
+    Settings,
+}
+
+pub enum SettingKey {
+    Flash,
+    ElapsedTime,
+    Notifications,
+}
+
+pub enum MenuAction {
+    ToggleSetting(SettingKey),
+    CloseMenu,
+}
+
+pub struct MenuClickRegion {
+    pub start_col: usize,
+    pub end_col: usize,
+    pub action: MenuAction,
+}
+
+// -- Tab click regions --
+
 pub struct ClickRegion {
     pub start_col: usize,
     pub end_col: usize,
@@ -63,9 +185,16 @@ pub struct ClickRegion {
     pub is_waiting: bool,
 }
 
+// -- Plugin state --
+
 #[derive(Default)]
 pub struct State {
     pub config: BarConfig,
+    pub settings: Settings,
+    pub view_mode: ViewMode,
+    pub menu_click_regions: Vec<MenuClickRegion>,
+    pub prefix_click_region: Option<(usize, usize)>,
+    pub config_loaded: bool,
     pub sessions: BTreeMap<u32, SessionInfo>,
     pub pane_to_tab: HashMap<u32, (usize, String)>,
     pub tabs: Vec<TabInfo>,

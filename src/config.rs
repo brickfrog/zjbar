@@ -25,30 +25,6 @@ fn get_str<'a>(config: &'a BTreeMap<String, String>, key: &str, default: &'a str
     config.get(key).map(|s| s.as_str()).unwrap_or(default)
 }
 
-fn get_bool(config: &BTreeMap<String, String>, key: &str, default: bool) -> bool {
-    config
-        .get(key)
-        .map(|v| matches!(v.as_str(), "true" | "1" | "yes"))
-        .unwrap_or(default)
-}
-
-/// Flash mode parsed from config string.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FlashMode {
-    Persist,
-    Brief,
-    Off,
-}
-
-impl FlashMode {
-    fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "persist" => Self::Persist,
-            "off" | "false" | "none" => Self::Off,
-            _ => Self::Brief,
-        }
-    }
-}
 
 // -- Tokyo Night defaults --
 const D_BAR_BG: Color = (26, 27, 38);          // #1a1b26
@@ -163,10 +139,6 @@ pub struct BarConfig {
     pub separator_left: String,
     pub separator_right: String,
     pub separator_tab: String,
-
-    // Behavior
-    pub flash: FlashMode,
-    pub elapsed_time: bool,
 }
 
 impl BarConfig {
@@ -230,12 +202,6 @@ impl BarConfig {
             separator_left: get_str(config, "separator_left", "\u{e0b0}").to_string(),
             separator_right: get_str(config, "separator_right", "\u{e0b2}").to_string(),
             separator_tab: get_str(config, "separator_tab", "\u{e0b1}").to_string(),
-
-            flash: config
-                .get("flash")
-                .map(|v| FlashMode::from_str(v))
-                .unwrap_or(FlashMode::Brief),
-            elapsed_time: get_bool(config, "elapsed_time", true),
         }
     }
 

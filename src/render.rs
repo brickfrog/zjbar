@@ -1,5 +1,8 @@
 use crate::config::Color;
-use crate::state::{unix_now, unix_now_ms, Activity, ClickRegion, SessionInfo, State};
+use crate::state::{
+    unix_now, unix_now_ms, Activity, ClickRegion, MenuAction, MenuClickRegion, SessionInfo,
+    SettingKey, State, ViewMode,
+};
 use std::fmt::Write;
 use std::io::Write as IoWrite;
 use zellij_tile::prelude::TabInfo;
@@ -38,6 +41,10 @@ fn activity_symbol(activity: &Activity) -> &'static str {
     }
 }
 
+fn fg(r: u8, g: u8, b: u8) -> String {
+    format!("\x1b[38;2;{r};{g};{b}m")
+}
+
 fn fg_c(c: Color) -> String {
     format!("\x1b[38;2;{};{};{}m", c.0, c.1, c.2)
 }
@@ -66,6 +73,7 @@ fn format_elapsed(secs: u64) -> String {
 
 pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     state.click_regions.clear();
+    state.menu_click_regions.clear();
 
     let cfg = &state.config;
     let mut buf = String::with_capacity(cols * 4);
@@ -96,13 +104,16 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
 
     let mut col = 0usize;
     if total_prefix_width <= cols {
-        // Session pill
+        // Session pill (clickable to toggle settings)
+        let prefix_start = col;
         let _ = write!(
             buf,
             "{}{}{BOLD}{session_pill_text}{RESET}",
             bg_c(cfg.session_bg), fg_c(cfg.session_fg),
         );
         col += session_pill_width;
+        state.prefix_click_region = Some((prefix_start, col));
+
         // Arrow: session → mode
         let _ = write!(buf, "{}{}{}", fg_c(cfg.session_bg), bg_c(mode_bg), cfg.separator_left);
         col += sep_left_width;
@@ -118,18 +129,23 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
         let _ = write!(buf, "{}{}{}", fg_c(mode_bg), bar_bg, cfg.separator_left);
         col += sep_left_width;
     } else if session_pill_width + sep_left_width <= cols {
+        let prefix_start = col;
         let _ = write!(
             buf,
             "{}{}{BOLD}{session_pill_text}{RESET}",
             bg_c(cfg.session_bg), fg_c(cfg.session_fg),
         );
         col += session_pill_width;
+        state.prefix_click_region = Some((prefix_start, col));
         let _ = write!(buf, "{}{}{}", fg_c(cfg.session_bg), bar_bg, cfg.separator_left);
         col += sep_left_width;
     }
 
     if col < cols {
-        render_tabs(state, &mut buf, &mut col, cols);
+        match state.view_mode {
+            ViewMode::Normal => render_tabs(state, &mut buf, &mut col, cols),
+            ViewMode::Settings => render_settings_menu(state, &mut buf, &mut col, cols),
+        }
     }
 
     // Fill remaining with bar bg
@@ -141,6 +157,112 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
 
     print!("{buf}");
     let _ = std::io::stdout().flush();
+}
+
+fn render_settings_menu(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+) {
+    let bar_bg = bg_c(state.config.bar_bg);
+
+    // Spacing after prefix
+    let _ = write!(buf, "{bar_bg} ");
+    *col += 1;
+
+    // Colors
+    let active_sym = fg(80, 200, 120);   // green
+    let inactive_sym = fg(100, 100, 100); // dim
+    let active_label = fg(192, 202, 245); // bright text
+    let dim_label = fg(100, 100, 100);    // dim text
+
+    // --- Flash ---
+    {
+        let is_on = state.settings.flash != crate::state::FlashMode::Off;
+        let (sym, sym_c, label_c) = if is_on {
+            ("●", &active_sym, &active_label)
+        } else {
+            ("○", &inactive_sym, &dim_label)
+        };
+        let label = format!("Flash: {}", state.settings.flash.label());
+        let start = *col;
+        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        *col += 2 + label.len();
+
+        state.menu_click_regions.push(MenuClickRegion {
+            start_col: start,
+            end_col: *col,
+            action: MenuAction::ToggleSetting(SettingKey::Flash),
+        });
+    }
+
+    if *col + 4 >= cols { return; }
+
+    // --- Elapsed time ---
+    {
+        let _ = write!(buf, "{bar_bg}  ");
+        *col += 2;
+
+        let on = state.settings.elapsed_time;
+        let (sym, sym_c, label_c) = if on {
+            ("●", &active_sym, &active_label)
+        } else {
+            ("○", &inactive_sym, &dim_label)
+        };
+        let label = if on { "Elapsed: on" } else { "Elapsed: off" };
+        let start = *col;
+        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        *col += 2 + label.len();
+
+        state.menu_click_regions.push(MenuClickRegion {
+            start_col: start,
+            end_col: *col,
+            action: MenuAction::ToggleSetting(SettingKey::ElapsedTime),
+        });
+    }
+
+    if *col + 4 >= cols { return; }
+
+    // --- Notifications ---
+    {
+        let _ = write!(buf, "{bar_bg}  ");
+        *col += 2;
+
+        let is_on = state.settings.notifications != crate::state::NotifyMode::Off;
+        let (sym, sym_c, label_c) = if is_on {
+            ("●", &active_sym, &active_label)
+        } else {
+            ("○", &inactive_sym, &dim_label)
+        };
+        let label = format!("Notify: {}", state.settings.notifications.label());
+        let start = *col;
+        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        *col += 2 + label.len();
+
+        state.menu_click_regions.push(MenuClickRegion {
+            start_col: start,
+            end_col: *col,
+            action: MenuAction::ToggleSetting(SettingKey::Notifications),
+        });
+    }
+
+    if *col + 3 >= cols { return; }
+
+    // --- Close button ---
+    {
+        let _ = write!(buf, "{bar_bg}  ");
+        *col += 2;
+        let start = *col;
+        let _ = write!(buf, "{bar_bg}{}×", fg(255, 60, 60));
+        *col += 1;
+
+        state.menu_click_regions.push(MenuClickRegion {
+            start_col: start,
+            end_col: *col,
+            action: MenuAction::CloseMenu,
+        });
+    }
 }
 
 fn render_tabs(
@@ -180,7 +302,7 @@ fn render_tabs(
     let elapsed_strs: Vec<Option<String>> = best_sessions
         .iter()
         .map(|session: &Option<&SessionInfo>| {
-            if !cfg.elapsed_time {
+            if !state.settings.elapsed_time {
                 return None;
             }
             session.and_then(|s| {
