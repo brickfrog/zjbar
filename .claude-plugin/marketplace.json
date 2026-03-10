@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Zellij status bar plugin with Tokyo Night theme and Claude Code activity awareness",
-    "version": "1.0.9"
+    "version": "1.0.10"
   },
   "plugins": [
     {
       "name": "zjbar",
       "source": "./",
       "description": "Zellij status bar plugin with Tokyo Night theme and Claude Code activity awareness",
-      "version": "1.0.9",
+      "version": "1.0.10",
       "author": {
         "name": "imroc",
         "email": "roc@imroc.cc"

@@ -10,6 +10,7 @@ Download the zjbar WASM plugin from GitHub Releases and install Zellij layouts.
 ## Install
 
 ```bash
+bash -c '
 set -e
 
 PLUGIN_DIR="$HOME/.config/zellij/plugins"
@@ -19,7 +20,7 @@ BASE_URL="https://raw.githubusercontent.com/imroc/zjbar/main"
 # Install WASM plugin
 mkdir -p "$PLUGIN_DIR"
 echo "Downloading zjbar.wasm..."
-if curl -fsSL "https://github.com/imroc/zjbar/releases/download/v1.0.9/zjbar.wasm" -o "$PLUGIN_DIR/zjbar.wasm"; then
+if curl -fsSL "https://github.com/imroc/zjbar/releases/download/v1.0.10/zjbar.wasm" -o "$PLUGIN_DIR/zjbar.wasm"; then
   echo "Installed: $PLUGIN_DIR/zjbar.wasm"
 else
   echo "Error: failed to download zjbar.wasm" >&2
@@ -40,4 +41,5 @@ echo "Installed layouts: $LAYOUT_DIR/zjbar.kdl"
 
 echo ""
 echo "Done! Start zellij with: zellij --layout zjbar"
+'
 ```

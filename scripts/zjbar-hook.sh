@@ -262,7 +262,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
         [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
         ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
         ICON_FLAG=()
-        [ -f "$ICON_PATH" ] && ICON_FLAG=(-appIcon "$ICON_PATH")
+        [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
         if command -v terminal-notifier >/dev/null 2>&1; then
           terminal-notifier \
             "${ICON_FLAG[@]}" \
