@@ -41,16 +41,19 @@ fn activity_symbol(activity: &Activity) -> &'static str {
     }
 }
 
-fn fg(r: u8, g: u8, b: u8) -> String {
-    format!("\x1b[38;2;{r};{g};{b}m")
+macro_rules! write_fg {
+    ($buf:expr, $r:expr, $g:expr, $b:expr) => {
+        let _ = write!($buf, "\x1b[38;2;{};{};{}m", $r, $g, $b);
+    };
+    ($buf:expr, $c:expr) => {
+        let _ = write!($buf, "\x1b[38;2;{};{};{}m", $c.0, $c.1, $c.2);
+    };
 }
 
-fn fg_c(c: Color) -> String {
-    format!("\x1b[38;2;{};{};{}m", c.0, c.1, c.2)
-}
-
-fn bg_c(c: Color) -> String {
-    format!("\x1b[48;2;{};{};{}m", c.0, c.1, c.2)
+macro_rules! write_bg {
+    ($buf:expr, $c:expr) => {
+        let _ = write!($buf, "\x1b[48;2;{};{};{}m", $c.0, $c.1, $c.2);
+    };
 }
 
 fn char_width(c: char) -> usize {
@@ -155,11 +158,11 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
 
     let cfg = &state.config;
     let mut buf = String::with_capacity(cols * 4);
-    let bar_bg = bg_c(cfg.bar_bg);
     buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
 
     if cols < 5 {
-        let _ = write!(buf, "{bar_bg}{:width$}{RESET}", "", width = cols);
+        write_bg!(buf, cfg.bar_bg);
+        let _ = write!(buf, "{:width$}{RESET}", "", width = cols);
         print!("{buf}");
         let _ = std::io::stdout().flush();
         return;
@@ -184,38 +187,40 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     if total_prefix_width <= cols {
         // Session pill (clickable to toggle settings)
         let prefix_start = col;
-        let _ = write!(
-            buf,
-            "{}{}{BOLD}{session_pill_text}{RESET}",
-            bg_c(cfg.session_bg), fg_c(cfg.session_fg),
-        );
+        write_bg!(buf, cfg.session_bg);
+        write_fg!(buf, cfg.session_fg);
+        let _ = write!(buf, "{BOLD}{session_pill_text}{RESET}");
         col += session_pill_width;
         state.prefix_click_region = Some((prefix_start, col));
 
         // Arrow: session → mode
-        let _ = write!(buf, "{}{}{}", fg_c(cfg.session_bg), bg_c(mode_bg), cfg.separator_left);
+        write_fg!(buf, cfg.session_bg);
+        write_bg!(buf, mode_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
         col += sep_left_width;
 
         // Mode pill
-        let _ = write!(
-            buf,
-            "{}{}{BOLD}{mode_pill_text}{RESET}",
-            bg_c(mode_bg), fg_c(mode_fg),
-        );
+        write_bg!(buf, mode_bg);
+        write_fg!(buf, mode_fg);
+        let _ = write!(buf, "{BOLD}{mode_pill_text}{RESET}");
         col += mode_pill_width;
+
         // Arrow: mode → bar_bg
-        let _ = write!(buf, "{}{}{}", fg_c(mode_bg), bar_bg, cfg.separator_left);
+        write_fg!(buf, mode_bg);
+        write_bg!(buf, cfg.bar_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
         col += sep_left_width;
     } else if session_pill_width + sep_left_width <= cols {
         let prefix_start = col;
-        let _ = write!(
-            buf,
-            "{}{}{BOLD}{session_pill_text}{RESET}",
-            bg_c(cfg.session_bg), fg_c(cfg.session_fg),
-        );
+        write_bg!(buf, cfg.session_bg);
+        write_fg!(buf, cfg.session_fg);
+        let _ = write!(buf, "{BOLD}{session_pill_text}{RESET}");
         col += session_pill_width;
         state.prefix_click_region = Some((prefix_start, col));
-        let _ = write!(buf, "{}{}{}", fg_c(cfg.session_bg), bar_bg, cfg.separator_left);
+
+        write_fg!(buf, cfg.session_bg);
+        write_bg!(buf, cfg.bar_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
         col += sep_left_width;
     }
 
@@ -229,7 +234,8 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     // Fill remaining with bar bg
     if col < cols {
         let remaining = cols - col;
-        let _ = write!(buf, "{}{:width$}", bg_c(state.config.bar_bg), "", width = remaining);
+        write_bg!(buf, state.config.bar_bg);
+        let _ = write!(buf, "{:width$}", "", width = remaining);
     }
     let _ = write!(buf, "{RESET}");
 
@@ -243,29 +249,32 @@ fn render_settings_menu(
     col: &mut usize,
     cols: usize,
 ) {
-    let bar_bg = bg_c(state.config.bar_bg);
-
     // Spacing after prefix
-    let _ = write!(buf, "{bar_bg} ");
+    write_bg!(buf, state.config.bar_bg);
+    let _ = write!(buf, " ");
     *col += 1;
 
-    // Colors
-    let active_sym = fg(80, 200, 120);   // green
-    let inactive_sym = fg(100, 100, 100); // dim
-    let active_label = fg(192, 202, 245); // bright text
-    let dim_label = fg(100, 100, 100);    // dim text
+    // Colors as tuples (zero-allocation)
+    let active_sym_c: Color = (80, 200, 120);
+    let inactive_sym_c: Color = (100, 100, 100);
+    let active_label_c: Color = (192, 202, 245);
+    let dim_label_c: Color = (100, 100, 100);
 
     // --- Flash ---
     {
         let is_on = state.settings.flash != crate::state::FlashMode::Off;
         let (sym, sym_c, label_c) = if is_on {
-            ("●", &active_sym, &active_label)
+            ("●", &active_sym_c, &active_label_c)
         } else {
-            ("○", &inactive_sym, &dim_label)
+            ("○", &inactive_sym_c, &dim_label_c)
         };
         let label = format!("Flash: {}", state.settings.flash.label());
         let start = *col;
-        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        write_bg!(buf, state.config.bar_bg);
+        write_fg!(buf, *sym_c);
+        let _ = write!(buf, "{sym} ");
+        write_fg!(buf, *label_c);
+        let _ = write!(buf, "{label}");
         *col += 2 + label.len();
 
         state.menu_click_regions.push(MenuClickRegion {
@@ -279,18 +288,23 @@ fn render_settings_menu(
 
     // --- Elapsed time ---
     {
-        let _ = write!(buf, "{bar_bg}  ");
+        write_bg!(buf, state.config.bar_bg);
+        let _ = write!(buf, "  ");
         *col += 2;
 
         let on = state.settings.elapsed_time;
         let (sym, sym_c, label_c) = if on {
-            ("●", &active_sym, &active_label)
+            ("●", &active_sym_c, &active_label_c)
         } else {
-            ("○", &inactive_sym, &dim_label)
+            ("○", &inactive_sym_c, &dim_label_c)
         };
         let label = if on { "Elapsed: on" } else { "Elapsed: off" };
         let start = *col;
-        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        write_bg!(buf, state.config.bar_bg);
+        write_fg!(buf, *sym_c);
+        let _ = write!(buf, "{sym} ");
+        write_fg!(buf, *label_c);
+        let _ = write!(buf, "{label}");
         *col += 2 + label.len();
 
         state.menu_click_regions.push(MenuClickRegion {
@@ -304,18 +318,23 @@ fn render_settings_menu(
 
     // --- Notifications ---
     {
-        let _ = write!(buf, "{bar_bg}  ");
+        write_bg!(buf, state.config.bar_bg);
+        let _ = write!(buf, "  ");
         *col += 2;
 
         let is_on = state.settings.notifications != crate::state::NotifyMode::Off;
         let (sym, sym_c, label_c) = if is_on {
-            ("●", &active_sym, &active_label)
+            ("●", &active_sym_c, &active_label_c)
         } else {
-            ("○", &inactive_sym, &dim_label)
+            ("○", &inactive_sym_c, &dim_label_c)
         };
         let label = format!("Notify: {}", state.settings.notifications.label());
         let start = *col;
-        let _ = write!(buf, "{bar_bg}{sym_c}{sym} {label_c}{label}");
+        write_bg!(buf, state.config.bar_bg);
+        write_fg!(buf, *sym_c);
+        let _ = write!(buf, "{sym} ");
+        write_fg!(buf, *label_c);
+        let _ = write!(buf, "{label}");
         *col += 2 + label.len();
 
         state.menu_click_regions.push(MenuClickRegion {
@@ -329,10 +348,13 @@ fn render_settings_menu(
 
     // --- Close button ---
     {
-        let _ = write!(buf, "{bar_bg}  ");
+        write_bg!(buf, state.config.bar_bg);
+        let _ = write!(buf, "  ");
         *col += 2;
         let start = *col;
-        let _ = write!(buf, "{bar_bg}{}×", fg(255, 60, 60));
+        write_bg!(buf, state.config.bar_bg);
+        write_fg!(buf, 255u8, 60u8, 60u8);
+        let _ = write!(buf, "×");
         *col += 1;
 
         state.menu_click_regions.push(MenuClickRegion {
@@ -448,35 +470,37 @@ fn render_tabs(
         };
 
         // Leading arrow: [bar_bg → idx_bg]
-        let _ = write!(buf, "{}{}{}", fg_c(cfg.bar_bg), bg_c(idx_bg), cfg.separator_left);
+        write_fg!(buf, cfg.bar_bg);
+        write_bg!(buf, idx_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
         *col += sep_left_width;
 
         // Index part: " N "
         let idx_str = format!("{}", tab.position + 1);
-        let _ = write!(
-            buf,
-            "{}{}{BOLD} {} {RESET}",
-            bg_c(idx_bg), fg_c(idx_fg), idx_str,
-        );
+        write_bg!(buf, idx_bg);
+        write_fg!(buf, idx_fg);
+        let _ = write!(buf, "{BOLD} {idx_str} {RESET}");
         *col += 1 + idx_str.len() + 1;
 
         // Transition from index to name area
         if is_active && !is_flash_bright {
             // Powerline arrow: idx_bg → tab_bg
-            let _ = write!(buf, "{}{}{}", fg_c(idx_bg), bg_c(tab_bg), cfg.separator_left);
+            write_fg!(buf, idx_bg);
+            write_bg!(buf, tab_bg);
+            let _ = write!(buf, "{}", cfg.separator_left);
             *col += sep_left_width;
         } else {
             // Thin separator (same bg)
-            let _ = write!(buf, "{}{}{}", bg_c(tab_bg), fg_c(cfg.tab_separator_fg), cfg.separator_tab);
+            write_bg!(buf, tab_bg);
+            write_fg!(buf, cfg.tab_separator_fg);
+            let _ = write!(buf, "{}", cfg.separator_tab);
             *col += sep_tab_width;
         }
 
         // Name part: " name "
-        let _ = write!(
-            buf,
-            "{}{}{BOLD} ",
-            bg_c(tab_bg), fg_c(tab_fg),
-        );
+        write_bg!(buf, tab_bg);
+        write_fg!(buf, tab_fg);
+        let _ = write!(buf, "{BOLD} ");
         *col += 1;
 
         if !truncated.is_empty() {
@@ -506,26 +530,32 @@ fn render_tabs(
                 } else {
                     cfg.activity_color(activity)
                 };
-                let _ = write!(buf, " {RESET}{}{}{}", bg_c(tab_bg), fg_c(icon_color), symbol);
+                let _ = write!(buf, " {RESET}");
+                write_bg!(buf, tab_bg);
+                write_fg!(buf, icon_color);
+                let _ = write!(buf, "{symbol}");
                 *col += 1 + display_width(symbol);
             }
 
             if let Some(ref es) = info.elapsed_str {
                 if *col + 1 + es.len() + 1 < cols {
-                    let _ = write!(
-                        buf,
-                        " {RESET}{}{}{}",
-                        bg_c(tab_bg), fg_c(cfg.elapsed_fg), es,
-                    );
+                    let _ = write!(buf, " {RESET}");
+                    write_bg!(buf, tab_bg);
+                    write_fg!(buf, cfg.elapsed_fg);
+                    let _ = write!(buf, "{es}");
                     *col += 1 + es.len();
                 }
             }
         }
 
         // Trailing space + closing arrow
-        let _ = write!(buf, "{RESET}{} ", bg_c(tab_bg));
+        let _ = write!(buf, "{RESET}");
+        write_bg!(buf, tab_bg);
+        let _ = write!(buf, " ");
         *col += 1;
-        let _ = write!(buf, "{}{}{}", fg_c(tab_bg), bg_c(cfg.bar_bg), cfg.separator_left);
+        write_fg!(buf, tab_bg);
+        write_bg!(buf, cfg.bar_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
         *col += sep_left_width;
 
         // Register click region
