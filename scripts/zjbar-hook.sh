@@ -12,15 +12,16 @@
 # Read hook JSON from stdin
 INPUT=$(cat)
 
-# Extract fields with jq (required dependency)
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
-# Notification event has message/title directly in input
-NOTIF_MESSAGE=$(echo "$INPUT" | jq -r '.message // empty')
-NOTIF_TITLE=$(echo "$INPUT" | jq -r '.title // empty')
+# Extract all fields in a single jq call (required dependency)
+eval "$(echo "$INPUT" | jq -r '
+  @sh "HOOK_EVENT=\(.hook_event_name // "")",
+  @sh "SESSION_ID=\(.session_id // "")",
+  @sh "TOOL_NAME=\(.tool_name // "")",
+  @sh "CWD=\(.cwd // "")",
+  @sh "TRANSCRIPT_PATH=\(.transcript_path // "")",
+  @sh "NOTIF_MESSAGE=\(.message // "")",
+  @sh "NOTIF_TITLE=\(.title // "")"
+')"
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
