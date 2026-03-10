@@ -53,8 +53,24 @@ fn bg_c(c: Color) -> String {
     format!("\x1b[48;2;{};{};{}m", c.0, c.1, c.2)
 }
 
+fn char_width(c: char) -> usize {
+    let cp = c as u32;
+    if (0x2E80..=0x9FFF).contains(&cp)
+        || (0xF900..=0xFAFF).contains(&cp)
+        || (0xFE30..=0xFE4F).contains(&cp)
+        || (0xFF01..=0xFF60).contains(&cp)
+        || (0xFFE0..=0xFFE6).contains(&cp)
+        || (0x20000..=0x2FA1F).contains(&cp)
+        || (0x30000..=0x323AF).contains(&cp)
+    {
+        2
+    } else {
+        1
+    }
+}
+
 fn display_width(s: &str) -> usize {
-    s.chars().count()
+    s.chars().map(char_width).sum()
 }
 
 const RESET: &str = "\x1b[0m";
