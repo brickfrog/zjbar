@@ -25,12 +25,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         "PostToolUse" | "PostToolUseFailure" => Activity::Thinking,
         "UserPromptSubmit" => Activity::Thinking,
         "PermissionRequest" => Activity::Waiting,
-        "Notification" => {
-            if let Some(session) = state.sessions.get_mut(&payload.pane_id) {
-                session.last_event_ts = crate::state::unix_now();
-            }
-            return;
-        }
+        "Notification" => Activity::Notification,
         "Stop" => Activity::Done,
         "SubagentStop" => Activity::AgentDone,
         _ => Activity::Idle,
@@ -55,7 +50,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
             cwd: None,
         });
 
-    if matches!(activity, Activity::Waiting) {
+    if matches!(activity, Activity::Waiting | Activity::Notification) {
         match state.settings.flash {
             FlashMode::Brief => {
                 state.flash_deadlines.insert(
