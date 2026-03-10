@@ -47,7 +47,7 @@ Add the plugin to your Zellij layout directly (no Claude Code integration):
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.5/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.6/zjbar.wasm"
     }
 }
 ```
