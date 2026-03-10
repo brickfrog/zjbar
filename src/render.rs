@@ -87,6 +87,68 @@ fn format_elapsed(secs: u64) -> String {
     }
 }
 
+struct TabRenderInfo {
+    best_activity: Option<Activity>,
+    is_flash_bright: bool,
+    waiting_pane_id: Option<u32>,
+    elapsed_str: Option<String>,
+}
+
+fn compute_tab_info(
+    state: &State,
+    tabs: &[&TabInfo],
+    now_s: u64,
+    now_ms: u64,
+) -> Vec<TabRenderInfo> {
+    tabs.iter()
+        .map(|tab| {
+            let tab_sessions: Vec<&SessionInfo> = state
+                .sessions
+                .values()
+                .filter(|s| s.tab_index == Some(tab.position))
+                .collect();
+
+            let best_session = tab_sessions
+                .iter()
+                .copied()
+                .max_by_key(|s| activity_priority(&s.activity));
+
+            let is_flash_bright = tab_sessions.iter().any(|s| {
+                state
+                    .flash_deadlines
+                    .get(&s.pane_id)
+                    .map(|&deadline| now_ms < deadline && (now_ms / 250) % 2 == 0)
+                    .unwrap_or(false)
+            });
+
+            let waiting_pane_id = tab_sessions
+                .iter()
+                .find(|s| matches!(s.activity, Activity::Waiting))
+                .map(|s| s.pane_id);
+
+            let elapsed_str = if !state.settings.elapsed_time {
+                None
+            } else {
+                best_session.and_then(|s| {
+                    let elapsed = now_s.saturating_sub(s.last_event_ts);
+                    if elapsed >= ELAPSED_THRESHOLD {
+                        Some(format_elapsed(elapsed))
+                    } else {
+                        None
+                    }
+                })
+            };
+
+            TabRenderInfo {
+                best_activity: best_session.map(|s| s.activity.clone()),
+                is_flash_bright,
+                waiting_pane_id,
+                elapsed_str,
+            }
+        })
+        .collect()
+}
+
 pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     state.click_regions.clear();
     state.menu_click_regions.clear();
@@ -302,35 +364,7 @@ fn render_tabs(
     let sep_left_width = display_width(&cfg.separator_left);
     let sep_tab_width = display_width(&cfg.separator_tab);
 
-    // For each tab, find the best Claude session
-    let best_sessions: Vec<Option<&SessionInfo>> = tabs
-        .iter()
-        .map(|tab| {
-            state
-                .sessions
-                .values()
-                .filter(|s| s.tab_index == Some(tab.position))
-                .max_by_key(|s| activity_priority(&s.activity))
-        })
-        .collect();
-
-    // Pre-compute elapsed strings
-    let elapsed_strs: Vec<Option<String>> = best_sessions
-        .iter()
-        .map(|session: &Option<&SessionInfo>| {
-            if !state.settings.elapsed_time {
-                return None;
-            }
-            session.and_then(|s| {
-                let elapsed = now_s.saturating_sub(s.last_event_ts);
-                if elapsed >= ELAPSED_THRESHOLD {
-                    Some(format_elapsed(elapsed))
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
+    let tab_infos = compute_tab_info(state, &tabs, now_s, now_ms);
 
     // Compute max tab name length
     let fixed_per_tab: usize = tabs.iter().map(|t| {
@@ -339,13 +373,13 @@ fn render_tabs(
         // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
         sep_left_width + 1 + idx_str.len() + 1 + mid_sep + 1 + sep_left_width
     }).sum();
-    let claude_overhead: usize = best_sessions
+    let claude_overhead: usize = tab_infos
         .iter()
-        .map(|s| if s.is_some() { 2 } else { 0 })
+        .map(|info| if info.best_activity.is_some() { 2 } else { 0 })
         .sum();
-    let elapsed_overhead: usize = elapsed_strs
+    let elapsed_overhead: usize = tab_infos
         .iter()
-        .map(|e| e.as_ref().map_or(0, |s| 1 + s.len()))
+        .map(|info| info.elapsed_str.as_ref().map_or(0, |s| 1 + s.len()))
         .sum();
 
     let indicator_overhead: usize = tabs.iter().map(|t| {
@@ -367,23 +401,12 @@ fn render_tabs(
             break;
         }
 
-        let session = best_sessions[i];
-        let is_claude = session.is_some();
+        let info = &tab_infos[i];
+        let is_claude = info.best_activity.is_some();
         let is_active = tab.active;
         let tab_name = &tab.name;
 
-        // Check flash
-        let is_flash_bright = state
-            .sessions
-            .values()
-            .filter(|s| s.tab_index == Some(tab.position))
-            .any(|s| {
-                state
-                    .flash_deadlines
-                    .get(&s.pane_id)
-                    .map(|&deadline| now_ms < deadline && (now_ms / 250) % 2 == 0)
-                    .unwrap_or(false)
-            });
+        let is_flash_bright = info.is_flash_bright;
 
         // Tab colors
         let tab_bg = if is_flash_bright {
@@ -475,19 +498,19 @@ fn render_tabs(
 
         // Claude activity indicator
         if is_claude {
-            let s = session.unwrap();
-            if !matches!(s.activity, Activity::Idle) {
-                let symbol = activity_symbol(&s.activity);
+            let activity = info.best_activity.as_ref().unwrap();
+            if !matches!(activity, Activity::Idle) {
+                let symbol = activity_symbol(activity);
                 let icon_color = if is_flash_bright {
                     cfg.flash_fg
                 } else {
-                    cfg.activity_color(&s.activity)
+                    cfg.activity_color(activity)
                 };
                 let _ = write!(buf, " {RESET}{}{}{}", bg_c(tab_bg), fg_c(icon_color), symbol);
                 *col += 1 + display_width(symbol);
             }
 
-            if let Some(ref es) = elapsed_strs[i] {
+            if let Some(ref es) = info.elapsed_str {
                 if *col + 1 + es.len() + 1 < cols {
                     let _ = write!(
                         buf,
@@ -507,18 +530,12 @@ fn render_tabs(
 
         // Register click region
         if is_claude {
-            let waiting_session = state
-                .sessions
-                .values()
-                .filter(|s| s.tab_index == Some(tab.position))
-                .find(|s| matches!(s.activity, Activity::Waiting));
-
             state.click_regions.push(ClickRegion {
                 start_col: region_start,
                 end_col: *col,
                 tab_index: tab.position,
-                pane_id: waiting_session.map_or(0, |s| s.pane_id),
-                is_waiting: waiting_session.is_some(),
+                pane_id: info.waiting_pane_id.unwrap_or(0),
+                is_waiting: info.waiting_pane_id.is_some(),
             });
         } else {
             state.click_regions.push(ClickRegion {
