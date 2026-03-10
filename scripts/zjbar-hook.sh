@@ -146,12 +146,19 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
   # Extract summary from transcript (if available)
   SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
 
+  # Detect app variant from settings dir
+  APP_NAME="Claude Code"
+  ICON_FILE="claude-logo.png"
+  case "${CLAUDE_SETTINGS_DIR:-}" in
+    *codebuddy*) APP_NAME="CodeBuddy"; ICON_FILE="codebuddy-logo.png" ;;
+  esac
+
   # Build notification title and message per event type
   case "$HOOK_EVENT" in
     PermissionRequest)
       TOOL_SUFFIX=""
       [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
-      TITLE="⚠ Claude Code"
+      TITLE="⚠ $APP_NAME"
       if [ -n "$SUMMARY" ]; then
         MESSAGE="$SUMMARY"
       else
@@ -162,7 +169,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       if [ -n "$NOTIF_TITLE" ]; then
         TITLE="$NOTIF_TITLE"
       else
-        TITLE="Claude Code"
+        TITLE="$APP_NAME"
       fi
       if [ -n "$SUMMARY" ]; then
         MESSAGE="$SUMMARY"
@@ -171,7 +178,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       fi
       ;;
     Stop)
-      TITLE="✅ Claude Code"
+      TITLE="✅ $APP_NAME"
       if [ -n "$SUMMARY" ]; then
         MESSAGE="$SUMMARY"
       else
@@ -179,7 +186,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       fi
       ;;
     SubagentStop)
-      TITLE="🤖 Claude Code"
+      TITLE="🤖 $APP_NAME"
       if [ -n "$SUMMARY" ]; then
         MESSAGE="$SUMMARY"
       else
@@ -187,7 +194,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       fi
       ;;
     *)
-      TITLE="Claude Code"
+      TITLE="$APP_NAME"
       MESSAGE="Event: $HOOK_EVENT"
       ;;
   esac
@@ -246,7 +253,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       case "$(uname)" in
         Darwin)
           [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="$HOME/.config/zellij/plugins/claude-logo.png"
+          ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
           ICON_FLAG=()
           [ -f "$ICON_PATH" ] && ICON_FLAG=(-appIcon "$ICON_PATH")
           if command -v terminal-notifier >/dev/null 2>&1; then
