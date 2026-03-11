@@ -1,0 +1,37 @@
+{
+  "name": "zjbar-opencode",
+  "version": "0.1.0",
+  "description": "zjbar plugin for OpenCode — live AI activity indicators in Zellij status bar",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "opencode",
+    "zellij",
+    "zjbar",
+    "status-bar",
+    "ai",
+    "plugin"
+  ],
+  "author": "imroc",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imroc/zjbar.git",
+    "directory": "opencode-plugin"
+  },
+  "homepage": "https://github.com/imroc/zjbar",
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.0.224"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0"
+  }
+}

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-A Zellij status bar plugin with a Tokyo Night powerline theme and optional Claude Code activity awareness.
+A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI coding agent activity awareness.
 
 ## Features
 
@@ -10,7 +10,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional Claud
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Clickable tabs** — click any tab to switch
 - **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, OpenCode, and other compatible tools)
-- **Multi-instance sync** — all Zellij tabs show a unified view of all Claude sessions
+- **Multi-instance sync** — all Zellij tabs show a unified view of all AI sessions
 
 ## Install
 
@@ -18,7 +18,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional Claud
 
 - [Zellij](https://zellij.dev)
 
-### Option 1: Claude Code plugin (recommended)
+### Option 1: Claude Code plugin (recommended for Claude Code users)
 
 Install as a Claude Code plugin to get automatic hook registration and a one-command setup:
 
@@ -41,13 +41,13 @@ zellij --layout zjbar
 
 ### Option 2: Zellij layout only
 
-Add the plugin to your Zellij layout directly (no Claude Code integration):
+Add the plugin to your Zellij layout directly (no AI tool integration):
 
 ```kdl
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.11/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.0/zjbar.wasm"
     }
 }
 ```
@@ -78,25 +78,33 @@ The hook installer auto-detects the settings path (`~/.claude/settings.json`). T
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 ```
 
-### Optional: OpenCode integration
+## AI Tool Integration
 
-If you use [OpenCode](https://opencode.ai), install the zjbar plugin to get live activity indicators:
+zjbar supports multiple AI coding agents. Each tool uses its own bridge to forward events to the zjbar plugin via `zellij pipe`.
+
+### Claude Code
+
+If installed via Option 1 above, Claude Code integration is already set up. For manual installation, run:
 
 ```bash
-# From the zjbar repo
-./scripts/install-opencode.sh
+make install-hooks
+```
 
-# Or manually
-cp scripts/zjbar-opencode-plugin.js ~/.config/opencode/plugins/
+### OpenCode
+
+Add the zjbar plugin to your `opencode.json`:
+
+```json
+{
+  "plugin": ["zjbar-opencode@latest"]
+}
 ```
 
 Then start OpenCode inside a Zellij session with the zjbar layout — activity indicators will appear automatically.
 
-To uninstall:
+### Other tools
 
-```bash
-./scripts/install-opencode.sh --uninstall
-```
+zjbar uses a unified JSON event protocol. Any AI coding tool can integrate by sending events via `zellij pipe --name zjbar`. See the [How It Works](#how-it-works) section for details.
 
 ### Optional: click-to-focus notifications
 
@@ -104,11 +112,11 @@ To uninstall:
 brew install terminal-notifier
 ```
 
-When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default. Notifications include **context-aware message summaries** extracted from Claude Code's transcript:
+When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default. Notifications include **context-aware message summaries** extracted from the AI tool's transcript:
 
 - **Stop** — last assistant message + tool usage stats (e.g. `📝2 ✏️3 ▶5`)
 - **PermissionRequest** — the specific command or file path being requested
-- **Notification** — the notification message from Claude Code
+- **Notification** — the notification message from the AI tool
 
 You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json` or the **settings menu** (click the session name in the status bar):
 
@@ -122,9 +130,9 @@ You can customize which events trigger notifications and the notification mode v
 ```
 
 - **`flash`** — `brief` | `persist` | `off` (default: `brief`). Tab background flash on permission request.
-- **`elapsed_time`** — `true` | `false` (default: `true`). Show elapsed time since last Claude Code activity per tab.
+- **`elapsed_time`** — `true` | `false` (default: `true`). Show elapsed time since last AI tool activity per tab.
 - **`notifications`** — `always` | `unfocused` | `off` (default: `always`). When set to `unfocused`, notifications only fire when the terminal is not the frontmost app.
-- **`notify_events`** — array of Claude Code hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
+- **`notify_events`** — array of hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
 
 ## Activity Symbols
 
@@ -200,7 +208,7 @@ All integrations use a unified JSON payload with a `source` field to identify th
 make uninstall
 ```
 
-Or if installed as a Claude Code plugin:
+If installed as a Claude Code plugin:
 
 ```
 /plugin uninstall zjbar@zjbar

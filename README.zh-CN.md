@@ -18,7 +18,7 @@
 
 - [Zellij](https://zellij.dev)
 
-### 方式一：Claude Code 插件（推荐）
+### 方式一：Claude Code 插件（适用于 Claude Code 用户）
 
 安装为 Claude Code 插件，可自动注册 hook 并一键安装：
 
@@ -41,13 +41,13 @@ zellij --layout zjbar
 
 ### 方式二：仅 Zellij 布局
 
-直接在 Zellij 布局文件中添加插件（无 Claude Code 集成）：
+直接在 Zellij 布局文件中添加插件（无 AI 工具集成）：
 
 ```kdl
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.0.11/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.0/zjbar.wasm"
     }
 }
 ```
@@ -78,25 +78,33 @@ hook 安装脚本会自动使用设置文件路径 `~/.claude/settings.json`。�
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 ```
 
-### 可选：OpenCode 集成
+## AI 工具集成
 
-如果你使用 [OpenCode](https://opencode.ai)，安装 zjbar 插件即可获得实时活动指示器：
+zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将事件转发给 zjbar 插件（通过 `zellij pipe`）。
+
+### Claude Code
+
+如果通过上述方式一安装，Claude Code 集成已自动配置。手动安装请运行：
 
 ```bash
-# 从 zjbar 仓库目录
-./scripts/install-opencode.sh
+make install-hooks
+```
 
-# 或手动复制
-cp scripts/zjbar-opencode-plugin.js ~/.config/opencode/plugins/
+### OpenCode
+
+在 `opencode.json` 中添加 zjbar 插件：
+
+```json
+{
+  "plugin": ["zjbar-opencode@latest"]
+}
 ```
 
 然后在使用 zjbar 布局的 Zellij 会话中启动 OpenCode，活动指示器将自动显示。
 
-卸载：
+### 其他工具
 
-```bash
-./scripts/install-opencode.sh --uninstall
-```
+zjbar 使用统一的 JSON 事件协议。任何 AI 编程工具都可以通过 `zellij pipe --name zjbar` 发送事件来集成。详见[工作原理](#工作原理)部分。
 
 ### 可选：点击聚焦通知
 
@@ -104,11 +112,11 @@ cp scripts/zjbar-opencode-plugin.js ~/.config/opencode/plugins/
 brew install terminal-notifier
 ```
 
-安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。通知包含从 Claude Code 对话记录中提取的**上下文感知消息摘要**：
+安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。通知包含从 AI 工具对话记录中提取的**上下文感知消息摘要**：
 
 - **Stop** — 最后一条助手消息 + 工具使用统计（如 `📝2 ✏️3 ▶5`）
 - **PermissionRequest** — 请求权限的具体命令或文件路径
-- **Notification** — Claude Code 发送的通知消息
+- **Notification** — AI 工具发送的通知消息
 
 可以通过 `~/.config/zellij/plugins/zjbar.json` 或**设置菜单**（点击状态栏中的 session 名称）自定义通知事件和通知模式：
 
@@ -122,9 +130,9 @@ brew install terminal-notifier
 ```
 
 - **`flash`** — `brief` | `persist` | `off`（默认：`brief`）。权限请求时 tab 背景闪烁模式。
-- **`elapsed_time`** — `true` | `false`（默认：`true`）。在每个 tab 上显示距上次 Claude Code 活动的耗时。
+- **`elapsed_time`** — `true` | `false`（默认：`true`）。在每个 tab 上显示距上次 AI 工具活动的耗时。
 - **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。设为 `unfocused` 时，仅在终端不在前台时发送通知。
-- **`notify_events`** — 触发通知的 Claude Code hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
+- **`notify_events`** — 触发通知的 hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
 
 ## 活动符号
 
@@ -200,7 +208,7 @@ OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
 make uninstall
 ```
 
-或者，如果是作为 Claude Code 插件安装的：
+如果是作为 Claude Code 插件安装的：
 
 ```
 /plugin uninstall zjbar@zjbar

@@ -16,9 +16,12 @@ src/
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
-├── zjbar-opencode-plugin.js  # OpenCode plugin → zellij pipe bridge
-├── install-opencode.sh       # OpenCode plugin installer/uninstaller
+├── install-opencode.sh       # OpenCode plugin installer/uninstaller (legacy)
 └── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
+opencode-plugin/              # npm package: zjbar-opencode
+├── src/index.ts              # OpenCode plugin → zellij pipe bridge (TypeScript)
+├── package.json              # npm package config
+└── tsconfig.json             # TypeScript config
 ```
 
 ## Build & Test
