@@ -148,11 +148,17 @@ Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
 **Note:** `Cargo.lock` is auto-updated by `cargo build` when `Cargo.toml` version changes. Remember to `git add Cargo.lock` when committing the version bump.
 
-After bumping `opencode-plugin/package.json` version, publish the npm package:
+After updating all versions, commit, push, and complete the release:
 
-```bash
-cd opencode-plugin
-npm publish
-```
-
-The `prepublishOnly` script runs `bun run build` automatically. Authentication is configured via `~/.npmrc` (`_authToken`).
+1. **Commit & push** the version bump.
+2. **Build WASM** and **create GitHub Release** with the `.wasm` binary attached:
+   ```bash
+   cargo build --release --target wasm32-wasip1
+   gh release create vX.Y.Z target/wasm32-wasip1/release/zjbar.wasm --title "vX.Y.Z" --generate-notes
+   ```
+3. **Publish npm package**:
+   ```bash
+   cd opencode-plugin
+   npm publish
+   ```
+   The `prepublishOnly` script runs `bun run build` automatically. Authentication is configured via `~/.npmrc` (`_authToken`).
