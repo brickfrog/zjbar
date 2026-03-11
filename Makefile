@@ -41,6 +41,7 @@ release: build
 		echo "Error: HEAD has no tag. Tag first with: git tag vX.Y.Z"; \
 		exit 1; \
 	fi
+	git push origin $(TAG)
 	@PREV=$$(git describe --tags --abbrev=0 $(TAG)^ 2>/dev/null); \
 	if [ -n "$$PREV" ]; then \
 		NOTES=$$(printf '## What'\''s Changed\n\n'; \
