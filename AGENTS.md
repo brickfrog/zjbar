@@ -43,9 +43,9 @@ Zellij is an interactive terminal app, so use tmux to test the plugin programmat
 
 ### Rules
 
-- **Fixed session name**: Always use `zjbar_test` as the tmux session name.
-- **Pre-cleanup**: Kill any existing `zjbar_test` session before starting a new one.
-- **Post-cleanup**: Always `tmux kill-session -t zjbar_test` after testing is complete.
+- **Fixed session name**: Always use `zjbar_test` for both tmux session and Zellij session (`zellij -s zjbar_test --layout layout.kdl`).
+- **Pre-cleanup**: Kill any existing `zjbar_test` tmux session and Zellij session before starting a new one (`zellij delete-session zjbar_test` — otherwise `zellij -s zjbar_test --layout ...` will attach to the old session and ignore the layout).
+- **Post-cleanup**: Always `tmux kill-session -t zjbar_test` after testing is complete (this also terminates the Zellij process inside it).
 - **Auto-test before delivery**: For any change that can be verified via tmux (rendering, colors, tab behavior, click regions, status bar content), you MUST run the tmux test automatically and confirm the result passes before delivering to the user. Do NOT ask the user to manually observe or confirm — verify it yourself.
 
 ### Basic workflow
@@ -57,6 +57,7 @@ cp target/wasm32-wasip1/release/zjbar.wasm ~/.config/zellij/plugins/
 
 # 2. Clean up any leftover session, then start Zellij
 tmux kill-session -t zjbar_test 2>/dev/null
+zellij delete-session zjbar_test 2>/dev/null
 tmux new-session -d -s zjbar_test -x 120 -y 30 \
   'zellij -s zjbar_test --layout layout.kdl'
 sleep 2  # wait for Zellij to initialize
@@ -112,6 +113,7 @@ layout {
 EOF
 
 tmux kill-session -t zjbar_test 2>/dev/null
+zellij delete-session zjbar_test 2>/dev/null
 tmux new-session -d -s zjbar_test -x 120 -y 30 \
   'zellij -s zjbar_test --layout /tmp/zjbar-test.kdl'
 sleep 2
@@ -129,6 +131,7 @@ Send a mock hook event and verify the status bar updates:
 ```bash
 # Start Zellij
 tmux kill-session -t zjbar_test 2>/dev/null
+zellij delete-session zjbar_test 2>/dev/null
 tmux new-session -d -s zjbar_test -x 120 -y 30 \
   'zellij -s zjbar_test --layout layout.kdl'
 sleep 2
