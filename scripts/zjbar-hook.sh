@@ -286,7 +286,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
   fi
 fi
 
-# Send to plugin
+# Send to plugin (fire-and-forget: zellij pipe blocks indefinitely)
 # Use -s flag to specify session explicitly because Claude Code sets ZELLIJ=0
 # which breaks the default IPC path detection.
-zellij -s "$ZELLIJ_SESSION_NAME" pipe --name "zjbar" -- "$PAYLOAD"
+zellij -s "$ZELLIJ_SESSION_NAME" pipe --name "zjbar" -- "$PAYLOAD" &
