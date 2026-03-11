@@ -26,6 +26,15 @@ eval "$(echo "$INPUT" | jq -r '
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
+# CodeBuddy compatibility:
+# CodeBuddy doesn't fire Stop events. Instead it sends a Notification
+# with notification_type="idle_prompt" when the session becomes idle.
+# Map this to a Stop event so zjbar shows the correct ✅ Done state
+# and can extract a transcript summary for the desktop notification.
+if [ "$HOOK_EVENT" = "Notification" ] && [ "$NOTIF_TYPE" = "idle_prompt" ]; then
+  HOOK_EVENT="Stop"
+fi
+
 # Build compact JSON payload
 PAYLOAD=$(jq -nc \
   --arg source "claude" \
