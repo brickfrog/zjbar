@@ -175,14 +175,12 @@ tmux kill-session -t zjbar_test
 
 - **Plugin source**: `opencode-plugin/src/index.ts`
 - **Build**: `cd opencode-plugin && bun run build` → outputs to `opencode-plugin/dist/index.js`
-- **Cache locations** (all three must be updated when debugging locally):
-  1. `.opencode/plugins/zjbar.js` (project-local, copied from dist)
-  2. `~/.config/opencode/node_modules/zjbar-opencode/dist/index.js` (global config cache)
-  3. `~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js` (global cache)
+- **Cache locations** (both must be updated when debugging locally):
+  1. `~/.config/opencode/node_modules/zjbar-opencode/dist/index.js` (global config cache)
+  2. `~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js` (global cache)
 - **Quick update all caches after rebuild**:
   ```bash
   cd opencode-plugin && bun run build
-  cp dist/index.js ../.opencode/plugins/zjbar.js
   cp dist/index.js ~/.config/opencode/node_modules/zjbar-opencode/dist/index.js 2>/dev/null
   cp dist/index.js ~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js 2>/dev/null
   ```

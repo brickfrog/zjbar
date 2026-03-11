@@ -273,7 +273,6 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     event: async ({ event }) => {
       const ev = event as any;
       const eventType: string = ev.type;
-
       switch (eventType) {
         case "session.created":
           activeSessionId = ev.properties?.info?.id || null;

@@ -47,7 +47,7 @@ zellij --layout zjbar
 default_tab_template {
     children
     pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.10/zjbar.wasm"
+        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.11/zjbar.wasm"
     }
 }
 ```
