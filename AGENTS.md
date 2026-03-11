@@ -206,6 +206,26 @@ tmux kill-session -t zjbar_test
 - Color palette follows Tokyo Night. All color defaults are defined in `config.rs`.
 - After any feature change, check if `README.md` needs updating (e.g. new config options, changed behavior, new install steps). If so, update both `README.md` (English) and `README.zh-CN.md` (Chinese) directly without asking for confirmation.
 
+## Development Workflow: Fix → Release → Verify
+
+Users install zjbar through plugin systems (Claude Code plugin marketplace, OpenCode npm plugin, CodeBuddy plugin). This means they can update to the latest version with a simple plugin update command and restart. **Always release immediately after fixing a bug or completing a feature** — do not batch multiple changes before releasing.
+
+The workflow for every code change is:
+
+1. **Fix/implement** the change
+2. **Build & test** locally (tmux test for WASM rendering, deploy to OpenCode caches for OpenCode plugin)
+3. **Bump version** in all 7 files (see checklist below)
+4. **Build WASM** (`cargo build --release --target wasm32-wasip1`) to update `Cargo.lock`
+5. **Commit, push, tag, `make release`** — this creates the GitHub Release and publishes the npm package
+6. **Update local caches** for OpenCode plugin so the user can verify immediately:
+   ```bash
+   cp opencode-plugin/dist/index.js ~/.config/opencode/node_modules/zjbar-opencode/dist/index.js
+   cp opencode-plugin/dist/index.js ~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js
+   ```
+7. **Tell the user** the version number and what changed, so they can update and verify
+
+This fast iteration loop allows the user to test fixes within seconds of a release by running plugin update commands (`/plugin update` for Claude Code/CodeBuddy, restart for OpenCode).
+
 ## Releasing a New Version
 
 When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the version in **all** of these places:
