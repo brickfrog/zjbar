@@ -125,6 +125,7 @@ tmux kill-session -t zjbar_test
 
 ## Conventions
 
+- This file (`AGENTS.md`) is the single source of project instructions. `CLAUDE.md`, `CODEBUDDY.md`, and `GEMINI.md` are all **symlinks** to `AGENTS.md`. When committing, always `git add AGENTS.md` — never add the symlink names directly.
 - All commit messages and code comments must be in **English**.
 - The WASM target is `wasm32-wasip1` (configured in `.cargo/config.toml`).
 - Release profile uses `opt-level = "s"` and LTO for minimal binary size.
@@ -141,7 +142,17 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 4. **`commands/install.md`** — WASM download URL in the curl command
 5. **`.claude-plugin/marketplace.json`** — both `version` fields
 6. **`.claude-plugin/plugin.json`** — `version` field
+7. **`opencode-plugin/package.json`** — `version` field (npm package version, independent of WASM version)
 
-Use `grep -r 'releases/download/v' .` to verify all URLs are updated.
+Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
 **Note:** `Cargo.lock` is auto-updated by `cargo build` when `Cargo.toml` version changes. Remember to `git add Cargo.lock` when committing the version bump.
+
+After bumping `opencode-plugin/package.json` version, publish the npm package:
+
+```bash
+cd opencode-plugin
+npm publish
+```
+
+The `prepublishOnly` script runs `bun run build` automatically. Ensure the `NPM_TOKEN` environment variable is set for authentication.
