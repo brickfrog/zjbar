@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import type { Part, Permission } from "@opencode-ai/sdk";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
@@ -88,6 +89,7 @@ function sendNotification(
   paneId: string,
   zellijSession: string,
   termProgram: string | null,
+  summary?: string | null,
 ): void {
   const appName = "OpenCode";
   const iconFile = "opencode-logo.png";
@@ -100,15 +102,15 @@ function sendNotification(
   switch (hookEvent) {
     case "PermissionRequest":
       title = `⚠ ${appName}`;
-      message = "Permission requested";
+      message = summary || "Permission requested";
       break;
     case "Stop":
       title = `✅ ${appName}`;
-      message = "Task completed";
+      message = summary || "Task completed";
       break;
     case "Notification":
       title = appName;
-      message = "Notification received";
+      message = summary || "Notification received";
       break;
     default:
       title = appName;
@@ -142,9 +144,57 @@ function sendNotification(
   }
 }
 
+// -- Session summary extraction --
+
+/** Strip markdown formatting and truncate text to maxLen at word boundary. */
+function cleanAndTruncate(text: string, maxLen = 120): string {
+  let cleaned = text
+    .replace(/\*\*/g, "")
+    .replace(/\*/g, "")
+    .replace(/`/g, "")
+    .replace(/^#+ /gm, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\n/g, " ")
+    .replace(/ {2,}/g, " ")
+    .trim();
+  if (cleaned.length > maxLen) {
+    cleaned = cleaned.slice(0, maxLen - 3);
+    const lastSpace = cleaned.lastIndexOf(" ");
+    if (lastSpace > 0) cleaned = cleaned.slice(0, lastSpace);
+    cleaned += "...";
+  }
+  return cleaned;
+}
+
+/** Fetch the last assistant text from the session via SDK client. */
+async function getSessionSummary(
+  client: any,
+  sessionId: string,
+): Promise<string | null> {
+  const res = await client.session.messages({
+    path: { id: sessionId },
+  });
+  if (!res.data) return null;
+  // Response is Array<{ info: Message, parts: Part[] }>
+  const messages: any[] = Array.isArray(res.data) ? res.data : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.info?.role !== "assistant") continue;
+    if (!msg.parts) continue;
+    // Find last text part
+    for (let j = msg.parts.length - 1; j >= 0; j--) {
+      const part: Part = msg.parts[j];
+      if (part.type === "text" && part.text) {
+        return cleanAndTruncate(part.text);
+      }
+    }
+  }
+  return null;
+}
+
 // -- Plugin entry --
 
-export const ZjbarPlugin: Plugin = async ({ directory }) => {
+export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   const zellijSession = process.env.ZELLIJ_SESSION_NAME;
   const paneId = process.env.ZELLIJ_PANE_ID;
   // Exit silently if not running inside Zellij
@@ -152,6 +202,7 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
 
   const sessionId = crypto.randomUUID();
   const termProgram = process.env.TERM_PROGRAM || null;
+  let activeSessionId: string | null = null;
 
   // Resolve zellij binary path once at startup
   let zellijBin = "zellij";
@@ -168,6 +219,7 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
   function sendToZjbar(
     hookEvent: string,
     toolName?: string | null,
+    summary?: string | null,
   ): void {
     const payload = JSON.stringify({
       source: "opencode",
@@ -194,7 +246,7 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
 
     // Desktop notifications for key events
     if (shouldNotify(hookEvent, paneId!, termProgram)) {
-      sendNotification(hookEvent, paneId!, zellijSession!, termProgram);
+      sendNotification(hookEvent, paneId!, zellijSession!, termProgram, summary);
     }
   }
 
@@ -206,18 +258,32 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
       const ev = event as any;
       switch (ev.type) {
         case "session.created":
+          activeSessionId = ev.properties?.sessionID || null;
           sendToZjbar("SessionStart");
           break;
-        case "session.idle":
-          sendToZjbar("Stop");
+        case "session.idle": {
+          // Fetch last assistant message summary via SDK client
+          const sid = ev.properties?.sessionID || activeSessionId;
+          let summary: string | null = null;
+          if (sid && client) {
+            try {
+              summary = await getSessionSummary(client, sid);
+            } catch {}
+          }
+          sendToZjbar("Stop", null, summary);
           break;
+        }
         case "session.deleted":
           sendToZjbar("SessionEnd");
           break;
-        case "permission.asked":
-          sendToZjbar("PermissionRequest");
+        case "permission.asked": {
+          const perm = ev.properties as Permission | undefined;
+          const permTitle = perm?.title || null;
+          sendToZjbar("PermissionRequest", null, permTitle);
           break;
+        }
         case "message.created":
+          activeSessionId = ev.properties?.info?.sessionID || activeSessionId;
           sendToZjbar("UserPromptSubmit");
           break;
       }
