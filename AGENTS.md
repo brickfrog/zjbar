@@ -151,10 +151,10 @@ Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 After updating all versions, commit, push, and complete the release:
 
 1. **Commit & push** the version bump.
-2. **Build WASM** and **create GitHub Release** with the `.wasm` binary attached:
+2. **Tag & create GitHub Release** (builds WASM, generates changelog, uploads binary):
    ```bash
-   cargo build --release --target wasm32-wasip1
-   gh release create vX.Y.Z target/wasm32-wasip1/release/zjbar.wasm --title "vX.Y.Z" --generate-notes
+   git tag vX.Y.Z
+   make release
    ```
 3. **Publish npm package**:
    ```bash
