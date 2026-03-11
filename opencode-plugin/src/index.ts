@@ -211,9 +211,13 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   const termProgram = process.env.TERM_PROGRAM || null;
   let activeSessionId: string | null = null;
 
-  // Track whether we already sent a Stop notification for the current
-  // busy→idle cycle, to avoid duplicate desktop notifications.
-  let stopNotified = false;
+  // Debounced Stop notification: OpenCode cycles through busy→idle
+  // multiple times during multi-step tasks (e.g. tool calls). We only
+  // want to send a desktop notification when the session is truly done,
+  // not on intermediate idle states. Wait STOP_DEBOUNCE_MS after the
+  // last session.idle before sending the notification.
+  const STOP_DEBOUNCE_MS = 2000;
+  let stopDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Resolve zellij binary path once at startup
   let zellijBin = "zellij";
@@ -278,8 +282,11 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
         case "session.status": {
           const status = ev.properties?.status?.type;
           if (status === "busy") {
-            // Reset stop notification flag when session becomes busy
-            stopNotified = false;
+            // Cancel any pending Stop notification — session is active again
+            if (stopDebounceTimer) {
+              clearTimeout(stopDebounceTimer);
+              stopDebounceTimer = null;
+            }
             // Send UserPromptSubmit to trigger Thinking (●) icon
             sendToZjbar("UserPromptSubmit");
           }
@@ -289,18 +296,22 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
           // Always send Stop to zjbar plugin to update tab state (✅ Done),
           // but skip automatic desktop notification here
           sendToZjbar("Stop", null, null, /* skipDesktop */ true);
-          // Send desktop notification only once per busy→idle cycle
-          if (stopNotified) break;
+          // Debounce: schedule desktop notification after a delay.
+          // If session becomes busy again before the timer fires,
+          // the timer is cancelled in the session.status(busy) handler.
+          if (stopDebounceTimer) clearTimeout(stopDebounceTimer);
           const sid = ev.properties?.sessionID || activeSessionId;
-          if (sid && client) {
-            try {
-              const summary = await getSessionSummary(client, sid);
-              if (summary && shouldNotify("Stop", paneId!, termProgram)) {
-                stopNotified = true;
-                sendNotification("Stop", paneId!, zellijSession!, termProgram, summary);
-              }
-            } catch {}
-          }
+          stopDebounceTimer = setTimeout(async () => {
+            stopDebounceTimer = null;
+            if (sid && client) {
+              try {
+                const summary = await getSessionSummary(client, sid);
+                if (summary && shouldNotify("Stop", paneId!, termProgram)) {
+                  sendNotification("Stop", paneId!, zellijSession!, termProgram, summary);
+                }
+              } catch {}
+            }
+          }, STOP_DEBOUNCE_MS);
           break;
         }
         case "session.deleted":
