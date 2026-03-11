@@ -43,7 +43,7 @@ Zellij is an interactive terminal app, so use tmux to test the plugin programmat
 
 ### Rules
 
-- **Fixed session name**: Always use `zjbar_test` for both tmux session and Zellij session (`zellij -s zjbar_test --layout layout.kdl`).
+- **Fixed session name**: Always use `zjbar_test` for both tmux session and Zellij session.
 - **Pre-cleanup**: Kill any existing `zjbar_test` tmux session and Zellij session before starting a new one (`zellij delete-session zjbar_test` — otherwise `zellij -s zjbar_test --layout ...` will attach to the old session and ignore the layout).
 - **Post-cleanup**: Always `tmux kill-session -t zjbar_test` after testing is complete (this also terminates the Zellij process inside it).
 - **Auto-test before delivery**: For any change that can be verified via tmux (rendering, colors, tab behavior, click regions, status bar content), you MUST run the tmux test automatically and confirm the result passes before delivering to the user. Do NOT ask the user to manually observe or confirm — verify it yourself.
