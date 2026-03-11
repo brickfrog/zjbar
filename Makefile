@@ -11,6 +11,7 @@ build:
 	cp $(WASM) $(PLUGIN_DIR)/zjbar.wasm
 	-cp assets/claude-logo.png $(PLUGIN_DIR)/claude-logo.png 2>/dev/null
 	-cp assets/codebuddy-logo.png $(PLUGIN_DIR)/codebuddy-logo.png 2>/dev/null
+	-cp assets/opencode-logo.png $(PLUGIN_DIR)/opencode-logo.png 2>/dev/null
 
 install-layouts:
 	@mkdir -p $(LAYOUT_DIR)

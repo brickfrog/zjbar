@@ -31,6 +31,7 @@ fi
 echo "Downloading notification icons..."
 curl -fsSL "$BASE_URL/assets/claude-logo.png" -o "$PLUGIN_DIR/claude-logo.png" || true
 curl -fsSL "$BASE_URL/assets/codebuddy-logo.png" -o "$PLUGIN_DIR/codebuddy-logo.png" || true
+curl -fsSL "$BASE_URL/assets/opencode-logo.png" -o "$PLUGIN_DIR/opencode-logo.png" || true
 
 # Install layout files
 mkdir -p "$LAYOUT_DIR"
