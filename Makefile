@@ -50,3 +50,4 @@ release: build
 		NOTES="Initial release"; \
 	fi; \
 	gh release create $(TAG) $(WASM) --title "$(TAG)" --notes "$$NOTES"
+	cd opencode-plugin && npm publish

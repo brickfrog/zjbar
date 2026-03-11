@@ -151,14 +151,9 @@ Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 After updating all versions, commit, push, and complete the release:
 
 1. **Commit & push** the version bump.
-2. **Tag & create GitHub Release** (builds WASM, generates changelog, uploads binary):
+2. **Tag & release** (builds WASM, creates GitHub Release with changelog, publishes npm package):
    ```bash
    git tag vX.Y.Z
    make release
    ```
-3. **Publish npm package**:
-   ```bash
-   cd opencode-plugin
-   npm publish
-   ```
-   The `prepublishOnly` script runs `bun run build` automatically. Authentication is configured via `~/.npmrc` (`_authToken`).
+   npm authentication is configured via `~/.npmrc` (`_authToken`).
