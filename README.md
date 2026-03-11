@@ -9,7 +9,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional Claud
 - **Powerline tab bar** — Tokyo Night themed tab bar with sharp powerline arrows between segments
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Clickable tabs** — click any tab to switch
-- **Optional Claude Code integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus
+- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, OpenCode, and other compatible tools)
 - **Multi-instance sync** — all Zellij tabs show a unified view of all Claude sessions
 
 ## Install
@@ -106,7 +106,9 @@ You can customize which events trigger notifications and the notification mode v
 - **`notifications`** — `always` | `unfocused` | `off` (default: `always`). When set to `unfocused`, notifications only fire when the terminal is not the frontmost app.
 - **`notify_events`** — array of Claude Code hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
 
-## Claude Code Activity Symbols
+## Activity Symbols
+
+When integrated with an AI coding agent (Claude Code, OpenCode, etc.), zjbar shows live activity indicators on each tab:
 
 | Symbol | Meaning                   |
 | ------ | ------------------------- |
@@ -163,11 +165,14 @@ See [layout.kdl](layout.kdl) for the full list of available options with default
 ## How It Works
 
 1. **WASM plugin** — runs inside Zellij, renders the status bar, manages state
-2. **Hook script** (optional) — bash bridge forwarding Claude Code events via `zellij pipe`
+2. **Hook / plugin bridge** (optional) — forwards AI coding agent events via `zellij pipe`
 
 ```
-Claude Code hook → zjbar-hook.sh → zellij pipe → plugin → render
+Claude Code hook → zjbar-hook.sh        → zellij pipe → plugin → render
+OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → plugin → render
 ```
+
+All integrations use a unified JSON payload with a `source` field to identify the AI tool.
 
 ## Uninstall
 

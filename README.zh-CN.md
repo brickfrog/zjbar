@@ -2,15 +2,15 @@
 
 [English](README.md) | 简体中文
 
-一个 Zellij 状态栏插件，采用 Tokyo Night powerline 主题，并可选集成 Claude Code 活动状态显示。
+一个 Zellij 状态栏插件，采用 Tokyo Night powerline 主题，并可选集成 AI 编程工具活动状态显示。
 
 ## 功能特性
 
 - **Powerline 标签栏** — Tokyo Night 主题标签栏，段落之间使用尖锐的 powerline 箭头
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
 - **可点击标签** — 点击任意标签即可切换
-- **可选的 Claude Code 集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦
-- **多实例同步** — 所有 Zellij 标签页展示所有 Claude 会话的统一视图
+- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、OpenCode 及其他兼容工具）
+- **多实例同步** — 所有 Zellij 标签页展示所有 AI 会话的统一视图
 
 ## 安装
 
@@ -106,7 +106,9 @@ brew install terminal-notifier
 - **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。设为 `unfocused` 时，仅在终端不在前台时发送通知。
 - **`notify_events`** — 触发通知的 Claude Code hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
 
-## Claude Code 活动符号
+## 活动符号
+
+集成 AI 编程工具（Claude Code、OpenCode 等）后，zjbar 在每个标签上显示实时活动指示器：
 
 | 符号 | 含义                |
 | ---- | ------------------- |
@@ -163,11 +165,14 @@ plugin location="zjbar.wasm" {
 ## 工作原理
 
 1. **WASM 插件** — 在 Zellij 内运行，渲染状态栏，管理状态
-2. **Hook 脚本**（可选） — bash 桥接脚本，通过 `zellij pipe` 转发 Claude Code 事件
+2. **Hook / 插件桥接**（可选） — 通过 `zellij pipe` 转发 AI 编程工具事件
 
 ```
-Claude Code hook → zjbar-hook.sh → zellij pipe → 插件 → 渲染
+Claude Code hook → zjbar-hook.sh        → zellij pipe → 插件 → 渲染
+OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
 ```
+
+所有集成使用统一的 JSON payload，通过 `source` 字段标识 AI 工具来源。
 
 ## 卸载
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional Claude Code activity awareness.
+zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional AI coding agent activity awareness (Claude Code, OpenCode, etc.).
 
 ## Architecture
 
@@ -12,11 +12,13 @@ src/
 ├── config.rs         # BarConfig struct, KDL config parser, color/mode/activity helpers
 ├── render.rs         # Status bar rendering with ANSI escape codes and powerline arrows
 ├── state.rs          # State types: Activity, SessionInfo, HookPayload, etc.
-├── event_handler.rs  # Maps Claude Code hook events to Activity states
+├── event_handler.rs  # Maps hook events to Activity states (tool-agnostic)
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
 scripts/
-├── zjbar-hook.sh     # Claude Code hook → zellij pipe bridge (embedded in WASM via include_str!)
-└── install-hooks.sh  # Standalone hook installer (used by `make install-hooks`)
+├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
+├── zjbar-opencode-plugin.js  # OpenCode plugin → zellij pipe bridge
+├── install-opencode.sh       # OpenCode plugin installer/uninstaller
+└── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
 ```
 
 ## Build & Test
@@ -114,7 +116,7 @@ tmux kill-session -t zjbar_test
 ## Key Concepts
 
 - **Rendering**: `render.rs` outputs raw ANSI escape codes via `print!()` in the `render()` method. Zellij captures stdout as pane content.
-- **IPC**: Claude Code hooks → `zjbar-hook.sh` → `zellij pipe --name zjbar` → plugin's `pipe()` method. Hook registration is manual via `make install-hooks`.
+- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), OpenCode uses `zjbar-opencode-plugin.js` (installed via `scripts/install-opencode.sh`).
 - **Multi-instance sync**: Each tab has its own plugin instance. They sync state via `pipe_message_to_plugin()` with names like `zjbar:sync`, `zjbar:request`.
 - **Configuration**: All visual and behavioral settings are parsed from the KDL layout plugin block via `BarConfig::from_kdl()` in `config.rs`. No runtime settings file.
 
