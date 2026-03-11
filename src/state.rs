@@ -46,6 +46,7 @@ pub struct SessionInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct HookPayload {
+    pub source: Option<String>,
     pub session_id: Option<String>,
     pub pane_id: u32,
     pub hook_event: String,

@@ -27,6 +27,7 @@ eval "$(echo "$INPUT" | jq -r '
 
 # Build compact JSON payload
 PAYLOAD=$(jq -nc \
+  --arg source "claude" \
   --arg pane_id "$ZELLIJ_PANE_ID" \
   --arg session_id "$SESSION_ID" \
   --arg hook_event "$HOOK_EVENT" \
@@ -35,6 +36,7 @@ PAYLOAD=$(jq -nc \
   --arg zellij_session "$ZELLIJ_SESSION_NAME" \
   --arg term_program "${TERM_PROGRAM:-}" \
   '{
+    source: $source,
     pane_id: ($pane_id | tonumber),
     session_id: $session_id,
     hook_event: $hook_event,
