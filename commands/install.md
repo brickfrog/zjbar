@@ -20,7 +20,7 @@ BASE_URL="https://raw.githubusercontent.com/imroc/zjbar/main"
 # Install WASM plugin
 mkdir -p "$PLUGIN_DIR"
 echo "Downloading zjbar.wasm..."
-if curl -fsSL "https://github.com/imroc/zjbar/releases/download/v1.1.0/zjbar.wasm" -o "$PLUGIN_DIR/zjbar.wasm"; then
+if curl -fsSL "https://github.com/imroc/zjbar/releases/download/v1.1.1/zjbar.wasm" -o "$PLUGIN_DIR/zjbar.wasm"; then
   echo "Installed: $PLUGIN_DIR/zjbar.wasm"
 else
   echo "Error: failed to download zjbar.wasm" >&2

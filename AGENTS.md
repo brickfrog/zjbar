@@ -155,4 +155,4 @@ cd opencode-plugin
 npm publish
 ```
 
-The `prepublishOnly` script runs `bun run build` automatically. Ensure the `NPM_TOKEN` environment variable is set for authentication.
+The `prepublishOnly` script runs `bun run build` automatically. Authentication is configured via `~/.npmrc` (`_authToken`).

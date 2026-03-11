@@ -1,6 +1,6 @@
 {
   "name": "zjbar-opencode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "zjbar plugin for OpenCode — live AI activity indicators in Zellij status bar",
   "type": "module",
   "main": "dist/index.js",
