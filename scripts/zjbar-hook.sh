@@ -20,7 +20,8 @@ eval "$(echo "$INPUT" | jq -r '
   @sh "CWD=\(.cwd // "")",
   @sh "TRANSCRIPT_PATH=\(.transcript_path // "")",
   @sh "NOTIF_MESSAGE=\(.message // "")",
-  @sh "NOTIF_TITLE=\(.title // "")"
+  @sh "NOTIF_TITLE=\(.title // "")",
+  @sh "NOTIF_TYPE=\(.notification_type // "")"
 ')"
 
 [ -z "$HOOK_EVENT" ] && exit 0
@@ -47,7 +48,10 @@ PAYLOAD=$(jq -nc \
   }')
 
 # -- Transcript summary extraction --
-# Extract a concise summary from Claude Code's JSONL transcript.
+# Extract a concise summary from the JSONL transcript.
+# Supports both Claude Code and CodeBuddy transcript formats:
+#   Claude Code: {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
+#   CodeBuddy:   {"type":"message","role":"assistant","content":[{"type":"output_text","text":"..."}]}
 # Usage: summary=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
 extract_summary() {
   local transcript="$1" event="$2"
@@ -56,9 +60,17 @@ extract_summary() {
   case "$event" in
   Stop | SubagentStop)
     # Get last assistant message text, clean markdown, truncate
+    # Handles both Claude Code (.type=="assistant" → .message.content[].text)
+    # and CodeBuddy (.type=="message" + .role=="assistant" → .content[].text)
     local text
     text=$(tail -100 "$transcript" |
-      jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' 2>/dev/null |
+      jq -r '
+        if .type == "assistant" then
+          .message.content[]? | select(.type == "text") | .text
+        elif (.type == "message" and .role == "assistant") then
+          .content[]? | select(.type == "text" or .type == "output_text") | .text
+        else empty end
+      ' 2>/dev/null |
       tail -1)
     [ -z "$text" ] && return
     # Strip markdown formatting
@@ -69,9 +81,17 @@ extract_summary() {
       text="${text% *}..."
     fi
     # Count tool usage in recent messages
+    # Claude Code: tool_use embedded in assistant message content
+    # CodeBuddy: function_call as separate top-level entries
     local tools
     tools=$(tail -200 "$transcript" |
-      jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' 2>/dev/null)
+      jq -r '
+        if .type == "assistant" then
+          .message.content[]? | select(.type == "tool_use") | .name
+        elif .type == "function_call" then
+          .name
+        else empty end
+      ' 2>/dev/null)
     local write_n edit_n bash_n
     write_n=$(echo "$tools" | grep -c '^Write$' 2>/dev/null || echo 0)
     edit_n=$(echo "$tools" | grep -c '^Edit$' 2>/dev/null || echo 0)
@@ -89,11 +109,18 @@ extract_summary() {
     ;;
   PermissionRequest)
     # Extract the last tool_use that matches the tool_name
+    # Claude Code: tool_use in assistant message content
+    # CodeBuddy: function_call as separate top-level entry with .arguments
     if [ -n "$TOOL_NAME" ] && [ -n "$transcript" ] && [ -f "$transcript" ]; then
       local detail
       detail=$(tail -50 "$transcript" |
-        jq -r --arg tn "$TOOL_NAME" \
-          'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == $tn) | .input | tostring' 2>/dev/null |
+        jq -r --arg tn "$TOOL_NAME" '
+          if .type == "assistant" then
+            .message.content[]? | select(.type == "tool_use" and .name == $tn) | .input | tostring
+          elif (.type == "function_call" and .name == $tn) then
+            .arguments | tostring
+          else empty end
+        ' 2>/dev/null |
         tail -1)
       if [ -n "$detail" ]; then
         # Extract meaningful short description from tool input
@@ -173,6 +200,14 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     fi
     ;;
   Notification)
+    # Skip desktop notification for noise notification types:
+    # - auth_success: fires on every startup (login/auth)
+    # - permission_prompt: duplicate of PermissionRequest event
+    case "$NOTIF_TYPE" in
+    auth_success | permission_prompt)
+      IS_NOTIFY_EVENT=false
+      ;;
+    esac
     if [ -n "$NOTIF_TITLE" ]; then
       TITLE="$NOTIF_TITLE"
     else
@@ -180,6 +215,8 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     fi
     if [ -n "$SUMMARY" ]; then
       MESSAGE="$SUMMARY"
+    elif [ -n "$NOTIF_MESSAGE" ]; then
+      MESSAGE="$NOTIF_MESSAGE"
     else
       MESSAGE="Notification received"
     fi
