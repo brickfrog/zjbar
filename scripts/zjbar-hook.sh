@@ -203,9 +203,10 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     # Skip desktop notification for noise notification types:
     # - auth_success: fires on every startup (login/auth)
     # - permission_prompt: duplicate of PermissionRequest event
+    SKIP_DESKTOP=false
     case "$NOTIF_TYPE" in
     auth_success | permission_prompt)
-      IS_NOTIFY_EVENT=false
+      SKIP_DESKTOP=true
       ;;
     esac
     if [ -n "$NOTIF_TITLE" ]; then
@@ -284,7 +285,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ;;
   esac
 
-  if [ "$SHOULD_NOTIFY" = true ]; then
+  if [ "$SHOULD_NOTIFY" = true ] && [ "${SKIP_DESKTOP:-false}" = false ]; then
     # Rate-limit: one notification per pane per 10 seconds
     LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
     NOW=$(date +%s)
