@@ -153,6 +153,18 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
   const sessionId = crypto.randomUUID();
   const termProgram = process.env.TERM_PROGRAM || null;
 
+  // Resolve zellij binary path once at startup
+  let zellijBin = "zellij";
+  try {
+    const { execFileSync } = require("node:child_process");
+    zellijBin = execFileSync("which", ["zellij"], { encoding: "utf-8" }).trim() || "zellij";
+  } catch {
+    // Check common paths
+    for (const p of ["/opt/homebrew/bin/zellij", "/usr/local/bin/zellij", "/usr/bin/zellij"]) {
+      if (existsSync(p)) { zellijBin = p; break; }
+    }
+  }
+
   function sendToZjbar(
     hookEvent: string,
     toolName?: string | null,
@@ -168,7 +180,8 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
       term_program: termProgram,
     });
     // Fire-and-forget: zellij pipe blocks indefinitely, so we spawn detached
-    const child = spawn("zellij", [
+    // Use resolved absolute path to avoid PATH issues in spawned child
+    const child = spawn(zellijBin, [
       "-s",
       zellijSession!,
       "pipe",
@@ -190,7 +203,8 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
 
   return {
     event: async ({ event }) => {
-      switch (event.type) {
+      const ev = event as any;
+      switch (ev.type) {
         case "session.created":
           sendToZjbar("SessionStart");
           break;
@@ -214,9 +228,11 @@ export const ZjbarPlugin: Plugin = async ({ directory }) => {
       sendToZjbar("PreToolUse", toolName);
     },
 
-    "tool.execute.after": async () => {
-      sendToZjbar("PostToolUse");
-    },
+    // NOTE: We intentionally omit "tool.execute.after" (PostToolUse).
+    // OpenCode runs in-process, so before/after fire within milliseconds.
+    // Sending PostToolUse would immediately overwrite the Tool icon with
+    // Thinking (●) before Zellij can render it. The Tool state naturally
+    // transitions on the next PreToolUse or session.idle (Stop).
   };
 };
 

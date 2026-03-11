@@ -114,6 +114,18 @@ var ZjbarPlugin = async ({ directory }) => {
     return {};
   const sessionId = crypto.randomUUID();
   const termProgram = process.env.TERM_PROGRAM || null;
+  let zellijBin = "zellij";
+  try {
+    const { execFileSync } = __require("node:child_process");
+    zellijBin = execFileSync("which", ["zellij"], { encoding: "utf-8" }).trim() || "zellij";
+  } catch {
+    for (const p of ["/opt/homebrew/bin/zellij", "/usr/local/bin/zellij", "/usr/bin/zellij"]) {
+      if (existsSync(p)) {
+        zellijBin = p;
+        break;
+      }
+    }
+  }
   function sendToZjbar(hookEvent, toolName) {
     const payload = JSON.stringify({
       source: "opencode",
@@ -125,7 +137,7 @@ var ZjbarPlugin = async ({ directory }) => {
       zellij_session: zellijSession,
       term_program: termProgram
     });
-    const child = spawn("zellij", [
+    const child = spawn(zellijBin, [
       "-s",
       zellijSession,
       "pipe",
@@ -142,7 +154,8 @@ var ZjbarPlugin = async ({ directory }) => {
   sendToZjbar("SessionStart");
   return {
     event: async ({ event }) => {
-      switch (event.type) {
+      const ev = event;
+      switch (ev.type) {
         case "session.created":
           sendToZjbar("SessionStart");
           break;
@@ -163,9 +176,6 @@ var ZjbarPlugin = async ({ directory }) => {
     "tool.execute.before": async (input) => {
       const toolName = TOOL_MAP[input.tool] || capitalize(input.tool);
       sendToZjbar("PreToolUse", toolName);
-    },
-    "tool.execute.after": async () => {
-      sendToZjbar("PostToolUse");
     }
   };
 };
