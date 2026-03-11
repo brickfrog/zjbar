@@ -41,6 +41,13 @@ zellij --layout layout.kdl
 
 Zellij is an interactive terminal app, so use tmux to test the plugin programmatically.
 
+### Rules
+
+- **Fixed session name**: Always use `zjbar_test` as the tmux session name.
+- **Pre-cleanup**: Kill any existing `zjbar_test` session before starting a new one.
+- **Post-cleanup**: Always `tmux kill-session -t zjbar_test` after testing is complete.
+- **Auto-test before delivery**: For any change that can be verified via tmux (rendering, colors, tab behavior, click regions, status bar content), you MUST run the tmux test automatically and confirm the result passes before delivering to the user. Do NOT ask the user to manually observe or confirm — verify it yourself.
+
 ### Basic workflow
 
 ```bash
@@ -48,13 +55,17 @@ Zellij is an interactive terminal app, so use tmux to test the plugin programmat
 cargo build --release --target wasm32-wasip1
 cp target/wasm32-wasip1/release/zjbar.wasm ~/.config/zellij/plugins/
 
-# 2. Start Zellij in a detached tmux session
+# 2. Clean up any leftover session, then start Zellij
+tmux kill-session -t zjbar_test 2>/dev/null
 tmux new-session -d -s zjbar_test -x 120 -y 30 \
-  'zellij --layout layout.kdl'
+  'zellij -s zjbar_test --layout layout.kdl'
 sleep 2  # wait for Zellij to initialize
 
 # 3. Check the status bar (last line of the pane)
 tmux capture-pane -t zjbar_test -p | tail -1
+
+# 4. Always clean up when done
+tmux kill-session -t zjbar_test
 ```
 
 ### Creating tabs via `zellij action`
@@ -62,11 +73,8 @@ tmux capture-pane -t zjbar_test -p | tail -1
 tmux intercepts `Ctrl+T` etc., so use `zellij action` from outside to manipulate tabs:
 
 ```bash
-# Extract session name from status bar
-SESSION=$(tmux capture-pane -t zjbar_test -p | tail -1 | awk '{print $1}')
-
-# Create new tabs
-ZELLIJ_SESSION_NAME=$SESSION zellij action new-tab
+# Create new tabs (use fixed session name)
+ZELLIJ_SESSION_NAME=zjbar_test zellij action new-tab
 sleep 1
 tmux capture-pane -t zjbar_test -p | tail -1
 ```
@@ -103,18 +111,81 @@ layout {
 }
 EOF
 
-tmux new-session -d -s zjbar_custom -x 120 -y 30 \
-  'zellij --layout /tmp/zjbar-test.kdl'
+tmux kill-session -t zjbar_test 2>/dev/null
+tmux new-session -d -s zjbar_test -x 120 -y 30 \
+  'zellij -s zjbar_test --layout /tmp/zjbar-test.kdl'
 sleep 2
-tmux capture-pane -t zjbar_custom -p -e | tail -1 | sed 's/\x1b/ESC/g'
+tmux capture-pane -t zjbar_test -p -e | tail -1 | sed 's/\x1b/ESC/g'
 # Confirm: 48;2;255;0;0 (session bg red), 48;2;0;255;0 (index bg green)
-```
 
-### Cleanup
-
-```bash
+# Clean up
 tmux kill-session -t zjbar_test
 ```
+
+### Testing AI integration events
+
+Send a mock hook event and verify the status bar updates:
+
+```bash
+# Start Zellij
+tmux kill-session -t zjbar_test 2>/dev/null
+tmux new-session -d -s zjbar_test -x 120 -y 30 \
+  'zellij -s zjbar_test --layout layout.kdl'
+sleep 2
+
+# Get the pane ID of the first terminal pane
+PANE_ID=$(zellij -s zjbar_test action list-clients 2>/dev/null | head -1 | awk '{print $1}')
+
+# Send a mock event (e.g. PreToolUse with Bash)
+zellij -s zjbar_test pipe --name zjbar -- \
+  "{\"source\":\"claude\",\"pane_id\":${PANE_ID:-1},\"session_id\":\"test-session\",\"hook_event\":\"PreToolUse\",\"tool_name\":\"Bash\"}"
+
+sleep 1
+tmux capture-pane -t zjbar_test -p | tail -1
+# Should show ⚡ icon on the tab
+
+# Clean up
+tmux kill-session -t zjbar_test
+```
+
+## Debugging AI Integration
+
+### WASM plugin (Rust side)
+
+- Use `eprintln!()` for debug output — it goes to Zellij's log file at `/tmp/zellij-<UID>/zellij-log/zellij.log`.
+- To watch logs in real time: `tail -f /tmp/zellij-$(id -u)/zellij-log/zellij.log | grep -i zjbar`
+- The `pipe()` method in `main.rs` receives all IPC messages. Add `eprintln!` there to inspect incoming payloads.
+- Remember to remove all debug logging before committing.
+
+### Claude Code integration
+
+- **Hook registration**: Hooks are defined in `~/.claude/settings.json` (or `~/.codebuddy/settings.json` for CodeBuddy). The zjbar Claude Code plugin registers hooks automatically via `.claude-plugin/hooks.json`.
+- **Hook script**: `scripts/zjbar-hook.sh` — receives hook event name and context JSON from stdin, formats and sends to `zellij pipe --name zjbar`.
+- **Manual test**: Send a mock event directly:
+  ```bash
+  zellij -s <session> pipe --name zjbar -- \
+    '{"source":"claude","pane_id":1,"session_id":"test","hook_event":"PreToolUse","tool_name":"Bash"}'
+  ```
+- **Hook events flow**: Claude Code → hook script (runs in separate process) → `zellij pipe` → WASM `pipe()` → `event_handler::handle_hook_event()` → Activity state update → re-render.
+
+### OpenCode integration
+
+- **Plugin source**: `opencode-plugin/src/index.ts`
+- **Build**: `cd opencode-plugin && bun run build` → outputs to `opencode-plugin/dist/index.js`
+- **Cache locations** (all three must be updated when debugging locally):
+  1. `.opencode/plugins/zjbar.js` (project-local, copied from dist)
+  2. `~/.config/opencode/node_modules/zjbar-opencode/dist/index.js` (global config cache)
+  3. `~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js` (global cache)
+- **Quick update all caches after rebuild**:
+  ```bash
+  cd opencode-plugin && bun run build
+  cp dist/index.js ../.opencode/plugins/zjbar.js
+  cp dist/index.js ~/.config/opencode/node_modules/zjbar-opencode/dist/index.js 2>/dev/null
+  cp dist/index.js ~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js 2>/dev/null
+  ```
+- **Environment quirks**: OpenCode sets `ZELLIJ=0` inside Zellij, so `zellij pipe` without `-s <session>` fails silently. The plugin resolves the session name from `ZELLIJ_SESSION_NAME` env var and always passes `-s`.
+- **Execution model difference**: OpenCode runs tool hooks in-process (not as separate shell commands like Claude Code). This means `tool.execute.before` and `tool.execute.after` fire within milliseconds of each other. Sending both PreToolUse and PostToolUse would cause the tool icon to be immediately overwritten by Thinking (●). The fix: only send PreToolUse, let the state naturally transition on `session.idle` (Stop).
+- **Debug logging**: Temporarily add `appendFileSync("/tmp/zjbar-opencode.log", ...)` in `sendToZjbar()` to trace events. Remove before committing.
 
 ## Key Concepts
 
