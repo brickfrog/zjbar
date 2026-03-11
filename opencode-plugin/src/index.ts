@@ -200,9 +200,20 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   // Exit silently if not running inside Zellij
   if (!zellijSession || !paneId) return {};
 
+  // Singleton guard: OpenCode may load the plugin from multiple sources
+  // (local + npm cache), resulting in duplicate instances. Use an env var
+  // to ensure only the first instance registers event handlers.
+  const GUARD_KEY = "ZJBAR_OPENCODE_ACTIVE";
+  if (process.env[GUARD_KEY]) return {};
+  process.env[GUARD_KEY] = "1";
+
   const sessionId = crypto.randomUUID();
   const termProgram = process.env.TERM_PROGRAM || null;
   let activeSessionId: string | null = null;
+
+  // Track whether we already sent a Stop notification for the current
+  // busy→idle cycle, to avoid duplicate desktop notifications.
+  let stopNotified = false;
 
   // Resolve zellij binary path once at startup
   let zellijBin = "zellij";
@@ -257,23 +268,35 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   return {
     event: async ({ event }) => {
       const ev = event as any;
-      switch (ev.type) {
+      const eventType: string = ev.type;
+
+      switch (eventType) {
         case "session.created":
-          activeSessionId = ev.properties?.sessionID || null;
+          activeSessionId = ev.properties?.info?.id || null;
           sendToZjbar("SessionStart");
           break;
+        case "session.status": {
+          const status = ev.properties?.status?.type;
+          if (status === "busy") {
+            // Reset stop notification flag when session becomes busy
+            stopNotified = false;
+            // Send UserPromptSubmit to trigger Thinking (●) icon
+            sendToZjbar("UserPromptSubmit");
+          }
+          break;
+        }
         case "session.idle": {
           // Always send Stop to zjbar plugin to update tab state (✅ Done),
           // but skip automatic desktop notification here
           sendToZjbar("Stop", null, null, /* skipDesktop */ true);
-          // Fetch last assistant message summary and send desktop notification
-          // only if we get meaningful content (avoids duplicate/empty notifications
-          // since OpenCode may fire session.idle multiple times)
+          // Send desktop notification only once per busy→idle cycle
+          if (stopNotified) break;
           const sid = ev.properties?.sessionID || activeSessionId;
           if (sid && client) {
             try {
               const summary = await getSessionSummary(client, sid);
               if (summary && shouldNotify("Stop", paneId!, termProgram)) {
+                stopNotified = true;
                 sendNotification("Stop", paneId!, zellijSession!, termProgram, summary);
               }
             } catch {}
@@ -289,10 +312,15 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
           sendToZjbar("PermissionRequest", null, permTitle);
           break;
         }
-        case "message.created":
-          activeSessionId = ev.properties?.info?.sessionID || activeSessionId;
-          sendToZjbar("UserPromptSubmit");
+        case "message.updated": {
+          // OpenCode uses message.updated (not message.created).
+          // Track active session ID from user messages.
+          const msgInfo = ev.properties?.info;
+          if (msgInfo?.role === "user" && msgInfo?.sessionID) {
+            activeSessionId = msgInfo.sessionID;
+          }
           break;
+        }
       }
     },
 
