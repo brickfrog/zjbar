@@ -220,6 +220,7 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     hookEvent: string,
     toolName?: string | null,
     summary?: string | null,
+    skipDesktop?: boolean,
   ): void {
     const payload = JSON.stringify({
       source: "opencode",
@@ -245,7 +246,7 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     child.unref();
 
     // Desktop notifications for key events
-    if (shouldNotify(hookEvent, paneId!, termProgram)) {
+    if (!skipDesktop && shouldNotify(hookEvent, paneId!, termProgram)) {
       sendNotification(hookEvent, paneId!, zellijSession!, termProgram, summary);
     }
   }
@@ -262,15 +263,21 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
           sendToZjbar("SessionStart");
           break;
         case "session.idle": {
-          // Fetch last assistant message summary via SDK client
+          // Always send Stop to zjbar plugin to update tab state (✅ Done),
+          // but skip automatic desktop notification here
+          sendToZjbar("Stop", null, null, /* skipDesktop */ true);
+          // Fetch last assistant message summary and send desktop notification
+          // only if we get meaningful content (avoids duplicate/empty notifications
+          // since OpenCode may fire session.idle multiple times)
           const sid = ev.properties?.sessionID || activeSessionId;
-          let summary: string | null = null;
           if (sid && client) {
             try {
-              summary = await getSessionSummary(client, sid);
+              const summary = await getSessionSummary(client, sid);
+              if (summary && shouldNotify("Stop", paneId!, termProgram)) {
+                sendNotification("Stop", paneId!, zellijSession!, termProgram, summary);
+              }
             } catch {}
           }
-          sendToZjbar("Stop", null, summary);
           break;
         }
         case "session.deleted":
