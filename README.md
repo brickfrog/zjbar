@@ -78,6 +78,26 @@ The hook installer auto-detects the settings path (`~/.claude/settings.json`). T
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 ```
 
+### Optional: OpenCode integration
+
+If you use [OpenCode](https://opencode.ai), install the zjbar plugin to get live activity indicators:
+
+```bash
+# From the zjbar repo
+./scripts/install-opencode.sh
+
+# Or manually
+cp scripts/zjbar-opencode-plugin.js ~/.config/opencode/plugins/
+```
+
+Then start OpenCode inside a Zellij session with the zjbar layout — activity indicators will appear automatically.
+
+To uninstall:
+
+```bash
+./scripts/install-opencode.sh --uninstall
+```
+
 ### Optional: click-to-focus notifications
 
 ```bash

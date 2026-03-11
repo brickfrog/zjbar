@@ -78,6 +78,26 @@ hook 安装脚本会自动使用设置文件路径 `~/.claude/settings.json`。�
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 ```
 
+### 可选：OpenCode 集成
+
+如果你使用 [OpenCode](https://opencode.ai)，安装 zjbar 插件即可获得实时活动指示器：
+
+```bash
+# 从 zjbar 仓库目录
+./scripts/install-opencode.sh
+
+# 或手动复制
+cp scripts/zjbar-opencode-plugin.js ~/.config/opencode/plugins/
+```
+
+然后在使用 zjbar 布局的 Zellij 会话中启动 OpenCode，活动指示器将自动显示。
+
+卸载：
+
+```bash
+./scripts/install-opencode.sh --uninstall
+```
+
 ### 可选：点击聚焦通知
 
 ```bash
