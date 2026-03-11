@@ -142,7 +142,7 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 4. **`commands/install.md`** — WASM download URL in the curl command
 5. **`.claude-plugin/marketplace.json`** — both `version` fields
 6. **`.claude-plugin/plugin.json`** — `version` field
-7. **`opencode-plugin/package.json`** — `version` field (npm package version, independent of WASM version)
+7. **`opencode-plugin/package.json`** — `version` field (must match the release version)
 
 Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
