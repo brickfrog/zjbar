@@ -17,6 +17,13 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         return;
     }
 
+    // Ignore subagent events — only track the main agent.
+    // SubagentStop should never arrive (removed from hooks.json and filtered
+    // in zjbar-hook.sh), but guard here as an extra safety net.
+    if event == "SubagentStop" {
+        return;
+    }
+
     let activity = match event {
         "SessionStart" => Activity::Init,
         "PreToolUse" => {
@@ -27,7 +34,6 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         "PermissionRequest" => Activity::Waiting,
         "Notification" => Activity::Notification,
         "Stop" => Activity::Done,
-        "SubagentStop" => Activity::AgentDone,
         _ => Activity::Idle,
     };
 

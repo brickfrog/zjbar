@@ -24,10 +24,17 @@ eval "$(echo "$INPUT" | jq -r '
   @sh "TRANSCRIPT_PATH=\(.transcript_path // "")",
   @sh "NOTIF_MESSAGE=\(.message // "")",
   @sh "NOTIF_TITLE=\(.title // "")",
-  @sh "NOTIF_TYPE=\(.notification_type // "")"
+  @sh "NOTIF_TYPE=\(.notification_type // "")",
+  @sh "AGENT_ID=\(.agent_id // "")"
 ')"
 
 [ -z "$HOOK_EVENT" ] && exit 0
+
+# Ignore subagent events — only track the main agent.
+# When a hook fires inside a subagent, Claude Code includes an `agent_id`
+# field in the JSON payload.  We don't want subagent tool-use, thinking,
+# or completion events to update the status bar or trigger notifications.
+[ -n "$AGENT_ID" ] && exit 0
 
 # CodeBuddy compatibility:
 # CodeBuddy doesn't fire Stop events. Instead it sends a Notification
@@ -70,7 +77,7 @@ extract_summary() {
   [ -z "$transcript" ] || [ ! -f "$transcript" ] && return
 
   case "$event" in
-  Stop | SubagentStop)
+  Stop)
     # Get last assistant message text, clean markdown, truncate
     # Handles both Claude Code (.type=="assistant" → .message.content[].text)
     # and CodeBuddy (.type=="message" + .role=="assistant" → .content[].text)
@@ -184,12 +191,12 @@ for EVT in $NOTIFY_EVENTS; do
   }
 done
 
-# -- Stop/SubagentStop debounce --
+# -- Stop debounce --
 # Claude Code and CodeBuddy may fire multiple Stop-like events in quick
-# succession (e.g. Stop + Notification/idle_prompt, or SubagentStop followed
-# by Stop). To avoid duplicate desktop notifications:
+# succession (e.g. Stop + Notification/idle_prompt). To avoid duplicate
+# desktop notifications:
 #
-# 1. On Stop/SubagentStop: cancel any pending debounce, then schedule a new
+# 1. On Stop: cancel any pending debounce, then schedule a new
 #    notification to fire after STOP_DEBOUNCE_SECS seconds.
 # 2. On activity events (UserPromptSubmit, PreToolUse): cancel the pending
 #    debounce — the session is still active, not truly done.
@@ -231,8 +238,8 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ICON_FILE="codebuddy-logo.png"
   fi
 
-  # For Stop/SubagentStop events, use debounced notification
-  if [ "$HOOK_EVENT" = "Stop" ] || [ "$HOOK_EVENT" = "SubagentStop" ]; then
+  # For Stop events, use debounced notification
+  if [ "$HOOK_EVENT" = "Stop" ]; then
     # Cancel any previous pending Stop notification
     cancel_stop_debounce
 
@@ -245,24 +252,12 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
 
       # Build notification title and message
-      case "$HOOK_EVENT" in
-      Stop)
-        TITLE="✅ $APP_NAME"
-        if [ -n "$SUMMARY" ]; then
-          MESSAGE="$SUMMARY"
-        else
-          MESSAGE="Task completed"
-        fi
-        ;;
-      SubagentStop)
-        TITLE="🤖 $APP_NAME"
-        if [ -n "$SUMMARY" ]; then
-          MESSAGE="$SUMMARY"
-        else
-          MESSAGE="Subagent completed"
-        fi
-        ;;
-      esac
+      TITLE="✅ $APP_NAME"
+      if [ -n "$SUMMARY" ]; then
+        MESSAGE="$SUMMARY"
+      else
+        MESSAGE="Task completed"
+      fi
 
       # Check notification mode
       SHOULD_NOTIFY=false
