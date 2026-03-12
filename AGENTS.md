@@ -14,14 +14,26 @@ src/
 ├── state.rs          # State types: Activity, SessionInfo, HookPayload, etc.
 ├── event_handler.rs  # Maps hook events to Activity states (tool-agnostic)
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
+hooks/
+└── hooks.json                # Claude Code hook event definitions (10 events)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
-├── install-opencode.sh       # OpenCode plugin installer/uninstaller (legacy)
 └── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
 opencode-plugin/              # npm package: zjbar-opencode
 ├── src/index.ts              # OpenCode plugin → zellij pipe bridge (TypeScript)
 ├── package.json              # npm package config
 └── tsconfig.json             # TypeScript config
+assets/
+├── claude-logo.png           # Claude Code logo (copied to plugins dir by `make build`)
+├── codebuddy-logo.png        # CodeBuddy logo
+└── opencode-logo.png         # OpenCode logo
+.claude-plugin/
+├── marketplace.json          # Claude Code plugin marketplace listing
+└── plugin.json               # Claude Code plugin metadata
+install.sh                    # Bootstrap installer (checks prerequisites, delegates to make)
+layout.kdl                    # Default Zellij layout with zjbar
+layout.swap.kdl               # Swap layout for stacked/alternate pane arrangements
+rust-toolchain.toml           # Pins Rust toolchain version
 ```
 
 ## Build & Test
@@ -162,7 +174,7 @@ tmux kill-session -t zjbar_test
 
 ### Claude Code integration
 
-- **Hook registration**: Hooks are defined in `~/.claude/settings.json` (or `~/.codebuddy/settings.json` for CodeBuddy). The zjbar Claude Code plugin registers hooks automatically via `.claude-plugin/hooks.json`.
+- **Hook registration**: Hooks are defined in `~/.claude/settings.json` (or `~/.codebuddy/settings.json` for CodeBuddy). The zjbar Claude Code plugin registers hooks automatically via `hooks/hooks.json`.
 - **Hook script**: `scripts/zjbar-hook.sh` — receives hook event name and context JSON from stdin, formats and sends to `zellij pipe --name zjbar`.
 - **Manual test**: Send a mock event directly:
   ```bash
@@ -191,7 +203,7 @@ tmux kill-session -t zjbar_test
 ## Key Concepts
 
 - **Rendering**: `render.rs` outputs raw ANSI escape codes via `print!()` in the `render()` method. Zellij captures stdout as pane content.
-- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), OpenCode uses `zjbar-opencode-plugin.js` (installed via `scripts/install-opencode.sh`).
+- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
 - **Multi-instance sync**: Each tab has its own plugin instance. They sync state via `pipe_message_to_plugin()` with names like `zjbar:sync`, `zjbar:request`.
 - **Configuration**: All visual and behavioral settings are parsed from the KDL layout plugin block via `BarConfig::from_kdl()` in `config.rs`. No runtime settings file.
 
@@ -212,7 +224,7 @@ The workflow for every code change is:
 
 1. **Fix/implement** the change
 2. **Build & test** locally (tmux test for WASM rendering, deploy to OpenCode caches for OpenCode plugin)
-3. **Bump version** in all 7 files (see checklist below)
+3. **Bump version** in all 6 files (see checklist below)
 4. **Build WASM** (`cargo build --release --target wasm32-wasip1`) to update `Cargo.lock`
 5. **Commit, push, tag, `make release`** — this creates the GitHub Release and publishes the npm package
 6. **Update local caches** for OpenCode plugin so the user can verify immediately:
@@ -231,10 +243,9 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 1. **`Cargo.toml`** — `version = "x.y.z"`
 2. **`README.md`** — WASM download URL in the layout example (`releases/download/vX.Y.Z/zjbar.wasm`)
 3. **`README.zh-CN.md`** — same WASM download URL
-4. **`commands/install.md`** — WASM download URL in the curl command
-5. **`.claude-plugin/marketplace.json`** — both `version` fields
-6. **`.claude-plugin/plugin.json`** — `version` field
-7. **`opencode-plugin/package.json`** — `version` field (must match the release version)
+4. **`.claude-plugin/marketplace.json`** — both `version` fields
+5. **`.claude-plugin/plugin.json`** — `version` field
+6. **`opencode-plugin/package.json`** — `version` field (must match the release version)
 
 Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
