@@ -191,7 +191,7 @@ tmux -L zjbar_test kill-server
 
 ### Codex CLI integration
 
-- **Integration method**: Codex uses `notify` config in `~/.codex/config.toml` (or `~/.codex-internal/config.toml` for Codex Internal). Unlike Claude Code hooks, Codex only has one event: `agent-turn-complete`.
+- **Integration method**: Codex uses `notify` config in `~/.codex/config.toml`. Unlike Claude Code hooks, Codex only has one event: `agent-turn-complete`. Override the config path with `CODEX_CONFIG` env var.
 - **Notify script**: `scripts/zjbar-codex-notify.sh` — receives JSON via `$1` (command-line argument, not stdin), maps `agent-turn-complete` to a `Stop` hook event, and sends to `zellij pipe --name zjbar`.
 - **Install**: `make install-codex-hooks` or `scripts/install-codex-hooks.sh`. This adds `notify = ["/path/to/zjbar-codex-notify.sh"]` as a top-level key in `config.toml`.
 - **Uninstall**: `make uninstall-codex-hooks` or `scripts/install-codex-hooks.sh --uninstall`.

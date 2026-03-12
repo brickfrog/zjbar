@@ -3,7 +3,7 @@
 # Receives Codex "agent-turn-complete" notifications and forwards them
 # to the zjbar Zellij plugin as Stop events.
 #
-# Usage in ~/.codex/config.toml (or ~/.codex-internal/config.toml):
+# Usage in ~/.codex/config.toml:
 #   notify = ["/path/to/zjbar-codex-notify.sh"]
 #
 # Codex passes a single JSON argument via $1 with fields:

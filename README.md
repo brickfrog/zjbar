@@ -103,7 +103,7 @@ Configure Codex to use the zjbar notify script:
 make install-codex-hooks
 ```
 
-This adds a `notify` entry to your Codex config (`~/.codex/config.toml` or `~/.codex-internal/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary.
+This adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. Override the config path with `CODEX_CONFIG` env var.
 
 To uninstall:
 

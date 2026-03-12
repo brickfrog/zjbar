@@ -3,23 +3,10 @@
 #
 # Usage: ./scripts/install-codex-hooks.sh [--uninstall]
 #        CODEX_CONFIG=/path/to/config.toml ./scripts/install-codex-hooks.sh
-#
-# Supports both standard Codex (~/.codex/config.toml) and
-# Codex Internal (~/.codex-internal/config.toml).
 set -euo pipefail
 
 NOTIFY_SCRIPT="$(cd "$(dirname "$0")" && pwd)/zjbar-codex-notify.sh"
-
-# Auto-detect config path: prefer codex-internal, fall back to codex
-if [ -n "${CODEX_CONFIG:-}" ]; then
-  CONFIG="$CODEX_CONFIG"
-elif [ -d "$HOME/.codex-internal" ]; then
-  CONFIG="$HOME/.codex-internal/config.toml"
-elif [ -d "$HOME/.codex" ]; then
-  CONFIG="$HOME/.codex/config.toml"
-else
-  CONFIG="$HOME/.codex/config.toml"
-fi
+CONFIG="${CODEX_CONFIG:-$HOME/.codex/config.toml}"
 
 if [ ! -f "$NOTIFY_SCRIPT" ]; then
   echo "Error: Notify script not found at $NOTIFY_SCRIPT" >&2

@@ -103,7 +103,7 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 make install-codex-hooks
 ```
 
-这会在你的 Codex 配置文件（`~/.codex/config.toml` 或 `~/.codex-internal/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。
+这会在你的 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。可通过 `CODEX_CONFIG` 环境变量覆盖配置路径。
 
 卸载：
 
@@ -147,19 +147,19 @@ brew install terminal-notifier
 
 集成 AI 编程工具（Claude Code、Codex、OpenCode 等）后，zjbar 在每个标签上显示实时活动指示器：
 
-| 符号 | 含义                |
-| ---- | ------------------- |
-| ◆    | 会话启动中          |
-| ●    | 思考中              |
-| ⚡   | 执行 Bash 命令      |
-| ◉    | 读取/搜索文件       |
-| ✎    | 编辑/写入文件       |
-| ⊜    | 生成子代理          |
-| ◈    | 网页搜索/获取       |
-| ⚙    | 其他工具            |
-| ▶    | 等待用户输入        |
-| ⚠    | 等待权限确认        |
-| ✓    | 完成                |
+| 符号 | 含义           |
+| ---- | -------------- |
+| ◆    | 会话启动中     |
+| ●    | 思考中         |
+| ⚡   | 执行 Bash 命令 |
+| ◉    | 读取/搜索文件  |
+| ✎    | 编辑/写入文件  |
+| ⊜    | 生成子代理     |
+| ◈    | 网页搜索/获取  |
+| ⚙    | 其他工具       |
+| ▶    | 等待用户输入   |
+| ⚠    | 等待权限确认   |
+| ✓    | 完成           |
 
 ## 配置
 
