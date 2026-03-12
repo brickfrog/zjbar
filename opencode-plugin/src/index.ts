@@ -193,6 +193,53 @@ async function getSessionSummary(
   return null;
 }
 
+// -- Singleton guard with local-priority --
+//
+// OpenCode may load the plugin from multiple sources (project-local
+// ./opencode-plugin via opencode.json AND global npm cache). Both
+// instances return event handler objects to OpenCode independently —
+// we cannot "unregister" an already-returned handler. Instead we use a
+// shared mutable flag: whichever instance does NOT own the flag makes
+// its callbacks no-ops. A local (project-dir) instance always wins,
+// even if the global one loaded first.
+
+/** Determine if this module is loaded from a project-local path. */
+function isLocalPlugin(): boolean {
+  try {
+    const thisDir = dirname(fileURLToPath(import.meta.url));
+    // Local plugin lives under the project's opencode-plugin/ dir,
+    // NOT inside node_modules.
+    return !thisDir.includes("node_modules");
+  } catch {
+    return false;
+  }
+}
+
+// Global mutable ref shared across all instances in the same process.
+// The "active" instance sets this to its own id; other instances check
+// before every callback and bail if they are not the active one.
+const GUARD_KEY = "ZJBAR_OPENCODE_ACTIVE";
+
+function acquireGuard(instanceId: string, local: boolean): boolean {
+  const current = process.env[GUARD_KEY];
+  if (!current) {
+    // No one registered yet — claim it.
+    process.env[GUARD_KEY] = instanceId;
+    return true;
+  }
+  if (local && !current.startsWith("local:")) {
+    // A global instance registered first, but we are local — take over.
+    process.env[GUARD_KEY] = instanceId;
+    return true;
+  }
+  // Someone else owns it and we can't preempt.
+  return false;
+}
+
+function isActiveInstance(instanceId: string): boolean {
+  return process.env[GUARD_KEY] === instanceId;
+}
+
 // -- Plugin entry --
 
 export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
@@ -201,12 +248,13 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   // Exit silently if not running inside Zellij
   if (!zellijSession || !paneId) return {};
 
-  // Singleton guard: OpenCode may load the plugin from multiple sources
-  // (local + npm cache), resulting in duplicate instances. Use an env var
-  // to ensure only the first instance registers event handlers.
-  const GUARD_KEY = "ZJBAR_OPENCODE_ACTIVE";
-  if (process.env[GUARD_KEY]) return {};
-  process.env[GUARD_KEY] = "1";
+  const local = isLocalPlugin();
+  const instanceId = `${local ? "local" : "global"}:${crypto.randomUUID()}`;
+
+  if (!acquireGuard(instanceId, local)) {
+    // Another instance already owns the guard and we can't preempt.
+    return {};
+  }
 
   const sessionId = crypto.randomUUID();
   const termProgram = process.env.TERM_PROGRAM || null;
@@ -238,6 +286,9 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     summary?: string | null,
     skipDesktop?: boolean,
   ): void {
+    // If a local instance took over after us, become a no-op.
+    if (!isActiveInstance(instanceId)) return;
+
     const payload = JSON.stringify({
       source: "opencode",
       pane_id: parseInt(paneId!, 10),
