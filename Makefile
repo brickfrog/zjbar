@@ -3,7 +3,7 @@ LAYOUT_DIR := $(HOME)/.config/zellij/layouts
 WASM       := target/wasm32-wasip1/release/zjbar.wasm
 TAG        := $(shell git describe --tags --exact-match 2>/dev/null)
 
-.PHONY: build install install-layouts install-hooks uninstall-hooks install-codex-hooks uninstall-codex-hooks uninstall clean release
+.PHONY: build install install-layouts install-codex-hooks uninstall-codex-hooks uninstall clean release
 
 build:
 	cargo build --release
@@ -14,12 +14,6 @@ install-layouts:
 	@mkdir -p $(LAYOUT_DIR)
 	cp layout.kdl $(LAYOUT_DIR)/zjbar.kdl
 	cp layout.swap.kdl $(LAYOUT_DIR)/zjbar.swap.kdl
-
-install-hooks:
-	scripts/install-hooks.sh
-
-uninstall-hooks:
-	scripts/install-hooks.sh --uninstall
 
 install-codex-hooks:
 	scripts/install-codex-hooks.sh
@@ -33,7 +27,6 @@ install: build install-layouts
 uninstall:
 	rm -f $(PLUGIN_DIR)/zjbar.wasm
 	rm -f $(LAYOUT_DIR)/zjbar.kdl $(LAYOUT_DIR)/zjbar.swap.kdl
-	-scripts/install-hooks.sh --uninstall 2>/dev/null
 	-scripts/install-codex-hooks.sh --uninstall 2>/dev/null
 	@echo "Uninstalled."
 

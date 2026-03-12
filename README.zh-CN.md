@@ -72,18 +72,6 @@ zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将�
 
 重启 Claude Code / CodeBuddy 使 hook 生效。
 
-如需手动注册 hook（不使用插件系统），运行：
-
-```bash
-make install-hooks
-```
-
-hook 安装脚本会自动检测设置文件路径（`~/.claude/settings.json`）。如需指定自定义路径：
-
-```bash
-CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
-```
-
 ### OpenCode
 
 在 `opencode.json` 中添加 zjbar 插件：

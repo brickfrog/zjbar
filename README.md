@@ -72,18 +72,6 @@ Install the zjbar plugin to automatically register hooks:
 
 Restart Claude Code / CodeBuddy for hooks to take effect.
 
-For manual hook registration (without the plugin system), run:
-
-```bash
-make install-hooks
-```
-
-The hook installer auto-detects the settings path (`~/.claude/settings.json`). To specify a custom path:
-
-```bash
-CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
-```
-
 ### OpenCode
 
 Add the zjbar plugin to your `opencode.json`:

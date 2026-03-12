@@ -18,7 +18,7 @@ hooks/
 └── hooks.json                # Claude Code hook event definitions (10 events)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
-├── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
+├── install-hooks.sh          # Claude Code hook installer (legacy, use plugin instead)
 ├── zjbar-codex-notify.sh     # Codex CLI notify → zellij pipe bridge
 └── install-codex-hooks.sh    # Codex notify installer (used by `make install-codex-hooks`)
 opencode-plugin/              # npm package: zjbar-opencode
@@ -224,7 +224,7 @@ tmux -L zjbar_test kill-server
 ## Key Concepts
 
 - **Rendering**: `render.rs` outputs raw ANSI escape codes via `print!()` in the `render()` method. Zellij captures stdout as pane content.
-- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), Codex uses `zjbar-codex-notify.sh` (registered via `make install-codex-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
+- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via plugin marketplace), Codex uses `zjbar-codex-notify.sh` (registered via `make install-codex-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
 - **Multi-instance sync**: Each tab has its own plugin instance. They sync state via `pipe_message_to_plugin()` with names like `zjbar:sync`, `zjbar:request`.
 - **Configuration**: All visual and behavioral settings are parsed from the KDL layout plugin block via `BarConfig::from_kdl()` in `config.rs`. No runtime settings file.
 
