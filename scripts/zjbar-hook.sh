@@ -309,7 +309,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
           case "$(uname)" in
           Darwin)
             [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-            ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
+            ICON_PATH="${CLAUDE_PLUGIN_ROOT:-}/assets/$ICON_FILE"
             ICON_FLAG=()
             [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
             if command -v terminal-notifier >/dev/null 2>&1; then
@@ -433,7 +433,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
         case "$(uname)" in
         Darwin)
           [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="$HOME/.config/zellij/plugins/$ICON_FILE"
+          ICON_PATH="${CLAUDE_PLUGIN_ROOT:-}/assets/$ICON_FILE"
           ICON_FLAG=()
           [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
           if command -v terminal-notifier >/dev/null 2>&1; then

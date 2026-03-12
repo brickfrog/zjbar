@@ -1,8 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import type { Part, Permission } from "@opencode-ai/sdk";
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { homedir, platform } from "node:os";
+import { fileURLToPath } from "node:url";
 import { spawn, execFile as execFileCb } from "node:child_process";
 
 const TOOL_MAP: Record<string, string> = {
@@ -93,8 +94,8 @@ function sendNotification(
 ): void {
   const appName = "OpenCode";
   const iconFile = "opencode-logo.png";
-  const pluginDir = join(homedir(), ".config", "zellij", "plugins");
-  const iconPath = join(pluginDir, iconFile);
+  const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const iconPath = join(pkgRoot, "assets", iconFile);
 
   let title: string;
   let message: string;

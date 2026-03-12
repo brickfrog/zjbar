@@ -24,7 +24,7 @@ opencode-plugin/              # npm package: zjbar-opencode
 ├── package.json              # npm package config
 └── tsconfig.json             # TypeScript config
 assets/
-├── claude-logo.png           # Claude Code logo (copied to plugins dir by `make build`)
+├── claude-logo.png           # Claude Code logo (used by hook for desktop notifications)
 ├── codebuddy-logo.png        # CodeBuddy logo
 └── opencode-logo.png         # OpenCode logo
 .claude-plugin/
