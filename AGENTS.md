@@ -56,8 +56,11 @@ Zellij is an interactive terminal app, so use tmux to test the plugin programmat
 ### Rules
 
 - **Fixed session name**: Always use `zjbar_test` for both tmux session and Zellij session.
-- **Pre-cleanup**: Kill any existing `zjbar_test` tmux session and Zellij session before starting a new one (`zellij delete-session zjbar_test` — otherwise `zellij -s zjbar_test --layout ...` will attach to the old session and ignore the layout).
-- **Post-cleanup**: Always `tmux kill-session -t zjbar_test` after testing is complete (this also terminates the Zellij process inside it).
+- **Dedicated tmux socket**: Always use `tmux -L zjbar_test` (dedicated socket) for ALL tmux commands. This isolates the test tmux server from any existing tmux sessions and ensures a clean environment free of inherited Zellij variables.
+- **Clear Zellij env vars**: When AI agents run inside Zellij, environment variables (`ZELLIJ`, `ZELLIJ_SESSION_NAME`, `ZELLIJ_PANE_ID`) are inherited by child processes. Zellij refuses to start when these are set (it detects nesting). Always launch the tmux session with `env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u ZELLIJ_PANE_ID` to strip them, and use `/bin/bash -c '...'` as the shell command (the user's default shell may be fish, which has different syntax).
+- **Use `-n` not `--layout`**: Always use `zellij -s zjbar_test -n <layout>` (`--new-session-with-layout`) instead of `--layout`. When other Zellij sessions exist on the same machine (e.g. a `work` session), `--layout` tries to attach to an existing session instead of creating a new one and fails with "Session not found". `-n` always creates a new session.
+- **Pre-cleanup**: Kill any existing `zjbar_test` tmux server and Zellij session before starting a new one (`zellij delete-session zjbar_test --force`).
+- **Post-cleanup**: Always `tmux -L zjbar_test kill-server` after testing is complete (this kills the dedicated tmux server and all sessions/Zellij processes inside it).
 - **Auto-test before delivery**: For any change that can be verified via tmux (rendering, colors, tab behavior, click regions, status bar content), you MUST build, deploy, and run the tmux test automatically, then verify the output matches expectations before delivering to the user. Never ask the user to manually observe or confirm test results unless tmux verification is truly impossible (e.g. interactive mouse clicks, visual aesthetics). Default assumption: if it renders in the status bar, you can capture and verify it yourself.
 
 ### Basic workflow
@@ -68,17 +71,18 @@ cargo build --release --target wasm32-wasip1
 cp target/wasm32-wasip1/release/zjbar.wasm ~/.config/zellij/plugins/
 
 # 2. Clean up any leftover session, then start Zellij
-tmux kill-session -t zjbar_test 2>/dev/null
-zellij delete-session zjbar_test 2>/dev/null
-tmux new-session -d -s zjbar_test -x 120 -y 30 \
-  'zellij -s zjbar_test --layout layout.kdl'
-sleep 2  # wait for Zellij to initialize
+tmux -L zjbar_test kill-server 2>/dev/null
+zellij delete-session zjbar_test --force 2>/dev/null
+env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u ZELLIJ_PANE_ID \
+  tmux -L zjbar_test new-session -d -s zjbar_test -x 120 -y 30 \
+  '/bin/bash -c "zellij -s zjbar_test -n layout.kdl"'
+sleep 3  # wait for Zellij to initialize
 
 # 3. Check the status bar (last line of the pane)
-tmux capture-pane -t zjbar_test -p | tail -1
+tmux -L zjbar_test capture-pane -t zjbar_test -p | tail -1
 
 # 4. Always clean up when done
-tmux kill-session -t zjbar_test
+tmux -L zjbar_test kill-server
 ```
 
 ### Creating tabs via `zellij action`
@@ -86,10 +90,10 @@ tmux kill-session -t zjbar_test
 tmux intercepts `Ctrl+T` etc., so use `zellij action` from outside to manipulate tabs:
 
 ```bash
-# Create new tabs (use fixed session name)
-ZELLIJ_SESSION_NAME=zjbar_test zellij action new-tab
+# Create new tabs (use -s to target the test session)
+zellij -s zjbar_test action new-tab
 sleep 1
-tmux capture-pane -t zjbar_test -p | tail -1
+tmux -L zjbar_test capture-pane -t zjbar_test -p | tail -1
 ```
 
 ### Verifying ANSI colors
@@ -98,7 +102,7 @@ tmux capture-pane -t zjbar_test -p | tail -1
 
 ```bash
 # Dump with ANSI codes in readable form
-tmux capture-pane -t zjbar_test -p -e | tail -1 | sed 's/\x1b/ESC/g'
+tmux -L zjbar_test capture-pane -t zjbar_test -p -e | tail -1 | sed 's/\x1b/ESC/g'
 
 # Verify specific RGB values (e.g. #7aa2f7 = 122,162,247)
 # Look for patterns like: ESC[48;2;122;162;247m (background)
@@ -124,16 +128,17 @@ layout {
 }
 EOF
 
-tmux kill-session -t zjbar_test 2>/dev/null
-zellij delete-session zjbar_test 2>/dev/null
-tmux new-session -d -s zjbar_test -x 120 -y 30 \
-  'zellij -s zjbar_test --layout /tmp/zjbar-test.kdl'
-sleep 2
-tmux capture-pane -t zjbar_test -p -e | tail -1 | sed 's/\x1b/ESC/g'
+tmux -L zjbar_test kill-server 2>/dev/null
+zellij delete-session zjbar_test --force 2>/dev/null
+env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u ZELLIJ_PANE_ID \
+  tmux -L zjbar_test new-session -d -s zjbar_test -x 120 -y 30 \
+  '/bin/bash -c "zellij -s zjbar_test -n /tmp/zjbar-test.kdl"'
+sleep 3
+tmux -L zjbar_test capture-pane -t zjbar_test -p -e | tail -1 | sed 's/\x1b/ESC/g'
 # Confirm: 48;2;255;0;0 (session bg red), 48;2;0;255;0 (index bg green)
 
 # Clean up
-tmux kill-session -t zjbar_test
+tmux -L zjbar_test kill-server
 ```
 
 ### Testing AI integration events
@@ -142,25 +147,23 @@ Send a mock hook event and verify the status bar updates:
 
 ```bash
 # Start Zellij
-tmux kill-session -t zjbar_test 2>/dev/null
-zellij delete-session zjbar_test 2>/dev/null
-tmux new-session -d -s zjbar_test -x 120 -y 30 \
-  'zellij -s zjbar_test --layout layout.kdl'
-sleep 2
-
-# Get the pane ID of the first terminal pane
-PANE_ID=$(zellij -s zjbar_test action list-clients 2>/dev/null | head -1 | awk '{print $1}')
+tmux -L zjbar_test kill-server 2>/dev/null
+zellij delete-session zjbar_test --force 2>/dev/null
+env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u ZELLIJ_PANE_ID \
+  tmux -L zjbar_test new-session -d -s zjbar_test -x 120 -y 30 \
+  '/bin/bash -c "zellij -s zjbar_test -n layout.kdl"'
+sleep 3
 
 # Send a mock event (e.g. PreToolUse with Bash)
 zellij -s zjbar_test pipe --name zjbar -- \
-  "{\"source\":\"claude\",\"pane_id\":${PANE_ID:-1},\"session_id\":\"test-session\",\"hook_event\":\"PreToolUse\",\"tool_name\":\"Bash\"}"
+  '{"source":"claude","pane_id":1,"session_id":"test-session","hook_event":"PreToolUse","tool_name":"Bash"}'
 
 sleep 1
-tmux capture-pane -t zjbar_test -p | tail -1
+tmux -L zjbar_test capture-pane -t zjbar_test -p | tail -1
 # Should show ⚡ icon on the tab
 
 # Clean up
-tmux kill-session -t zjbar_test
+tmux -L zjbar_test kill-server
 ```
 
 ## Debugging AI Integration
