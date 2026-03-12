@@ -191,10 +191,10 @@ tmux -L zjbar_test kill-server
 
 ### Codex CLI integration
 
-- **Integration method**: Codex uses `notify` config in `~/.codex/config.toml`. Unlike Claude Code hooks, Codex only has one event: `agent-turn-complete`. Override the config path with `CODEX_CONFIG` env var.
+- **Integration method**: Codex uses `notify` config in `~/.codex/config.toml`. Unlike Claude Code hooks, Codex only has one event: `agent-turn-complete`. Override the Codex config directory with `CODEX_HOME` env var (default `~/.codex`).
 - **Notify script**: `scripts/zjbar-codex-notify.sh` — receives JSON via `$1` (command-line argument, not stdin), maps `agent-turn-complete` to a `Stop` hook event, and sends to `zellij pipe --name zjbar`.
-- **Install**: `make install-codex-hooks` or `scripts/install-codex-hooks.sh`. This adds `notify = ["/path/to/zjbar-codex-notify.sh"]` as a top-level key in `config.toml`.
-- **Uninstall**: `make uninstall-codex-hooks` or `scripts/install-codex-hooks.sh --uninstall`.
+- **Install**: `make install-codex-hooks` or `scripts/install-codex-hooks.sh`. This copies the notify script and icon to `$CODEX_HOME/zjbar/` and adds `notify = ["$CODEX_HOME/zjbar/zjbar-codex-notify.sh"]` to `config.toml`. The repo can be safely deleted after installation.
+- **Uninstall**: `make uninstall-codex-hooks` or `scripts/install-codex-hooks.sh --uninstall`. This removes the `$CODEX_HOME/zjbar/` directory and the `notify` entry from `config.toml`.
 - **Limitations**: Only the Done (checkmark) state is supported — no PreToolUse, Thinking, or Waiting states since Codex doesn't expose granular hook events.
 - **Summary extraction**: The `last-assistant-message` field from the Codex notification JSON is used directly for desktop notification summaries.
 - **Manual test**: Send a mock event directly:

@@ -66,6 +66,7 @@ zjbar supports multiple AI coding agents. Each tool uses its own bridge to forwa
 Install the zjbar plugin to automatically register hooks:
 
 ```
+/plugin marketplace add imroc/zjbar
 /plugin install zjbar@zjbar
 ```
 
@@ -103,7 +104,7 @@ Configure Codex to use the zjbar notify script:
 make install-codex-hooks
 ```
 
-This adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. Override the config path with `CODEX_CONFIG` env var.
+This copies the notify script and icon to `~/.codex/zjbar/` and adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. The repo can be safely deleted after installation. Override the Codex config directory with `CODEX_HOME` env var.
 
 To uninstall:
 

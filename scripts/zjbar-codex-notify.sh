@@ -31,9 +31,16 @@ eval "$(echo "$INPUT" | jq -r '
   @sh "LAST_MESSAGE=\(."last-assistant-message" // "")"
 ')"
 
-# Resolve plugin root (for notification icon)
+# Resolve script directory (for notification icon)
+# Works both in-repo (scripts/ → ../assets/) and installed (~/.codex/zjbar/ → assets/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Try installed location first (assets/ sibling), then repo layout (../assets/)
+if [ -d "${SCRIPT_DIR}/assets" ]; then
+  ICON_DIR="${SCRIPT_DIR}/assets"
+else
+  ICON_DIR="$(dirname "$SCRIPT_DIR")/assets"
+fi
 
 # Build zjbar JSON payload (maps to Stop event)
 PAYLOAD=$(jq -nc \
@@ -150,7 +157,7 @@ cancel_stop_debounce
       case "$(uname)" in
       Darwin)
         [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-        ICON_PATH="${PLUGIN_ROOT}/assets/codex-logo.png"
+        ICON_PATH="${ICON_DIR}/codex-logo.png"
         ICON_FLAG=()
         [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
         if command -v terminal-notifier >/dev/null 2>&1; then

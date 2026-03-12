@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
 # install-codex-hooks.sh — Add zjbar notify entry to Codex config.toml
 #
+# Copies the notify script and icon to $CODEX_HOME/zjbar/ so the repo can
+# be deleted after installation without breaking the hook.
+#
 # Usage: ./scripts/install-codex-hooks.sh [--uninstall]
-#        CODEX_CONFIG=/path/to/config.toml ./scripts/install-codex-hooks.sh
+#        CODEX_HOME=/path/to/codex ./scripts/install-codex-hooks.sh
 set -euo pipefail
 
-NOTIFY_SCRIPT="$(cd "$(dirname "$0")" && pwd)/zjbar-codex-notify.sh"
-CONFIG="${CODEX_CONFIG:-$HOME/.codex/config.toml}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+SOURCE_SCRIPT="${SCRIPT_DIR}/zjbar-codex-notify.sh"
+SOURCE_ICON="${REPO_ROOT}/assets/codex-logo.png"
 
-if [ ! -f "$NOTIFY_SCRIPT" ]; then
-  echo "Error: Notify script not found at $NOTIFY_SCRIPT" >&2
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CONFIG="${CODEX_HOME}/config.toml"
+INSTALL_DIR="${CODEX_HOME}/zjbar"
+INSTALLED_SCRIPT="${INSTALL_DIR}/zjbar-codex-notify.sh"
+INSTALLED_ICON="${INSTALL_DIR}/assets/codex-logo.png"
+
+if [ ! -f "$SOURCE_SCRIPT" ]; then
+  echo "Error: Notify script not found at $SOURCE_SCRIPT" >&2
   exit 1
 fi
 
 # Use fixed-string grep (-F) to avoid regex metacharacter issues (e.g. dots in paths)
 has_our_entry() {
-  grep -qF "$NOTIFY_SCRIPT" "$CONFIG" 2>/dev/null
+  grep -qF "zjbar-codex-notify.sh" "$CONFIG" 2>/dev/null
 }
 
 uninstall() {
@@ -30,11 +41,11 @@ uninstall() {
   fi
 
   # Use python3 for safe TOML manipulation — avoids sed/grep edge cases
-  python3 - "$CONFIG" "$NOTIFY_SCRIPT" "remove" <<'PYEOF'
+  python3 - "$CONFIG" "zjbar-codex-notify.sh" "remove" <<'PYEOF'
 import sys, os
 
 config_path = sys.argv[1]
-script_path = sys.argv[2]
+marker = sys.argv[2]
 
 with open(config_path, 'r') as f:
     lines = f.readlines()
@@ -44,8 +55,8 @@ new_lines = []
 removed = False
 for line in lines:
     stripped = line.strip()
-    # Match lines that start with "notify" and contain our script path
-    if stripped.startswith('notify') and '=' in stripped and script_path in stripped:
+    # Match lines that start with "notify" and contain our script marker
+    if stripped.startswith('notify') and '=' in stripped and marker in stripped:
         # Parse the array value to remove only our entry
         eq_pos = stripped.index('=')
         prefix = stripped[:eq_pos + 1].strip()
@@ -70,8 +81,8 @@ for line in lines:
                 if current.strip():
                     entries.append(current.strip())
 
-                # Remove entries containing our script path
-                filtered = [e for e in entries if script_path not in e]
+                # Remove entries containing our script
+                filtered = [e for e in entries if marker not in e]
 
                 if filtered:
                     new_lines.append(f'notify = [{", ".join(filtered)}]\n')
@@ -95,6 +106,12 @@ if removed:
 sys.exit(0 if removed else 1)
 PYEOF
 
+  # Remove installed files
+  if [ -d "$INSTALL_DIR" ]; then
+    rm -rf "$INSTALL_DIR"
+    echo "Removed $INSTALL_DIR"
+  fi
+
   echo "Uninstalled zjbar notify from $CONFIG"
 }
 
@@ -110,8 +127,15 @@ install() {
     uninstall 2>/dev/null || true
   fi
 
+  # Copy script and assets to persistent directory
+  mkdir -p "${INSTALL_DIR}/assets"
+  cp "$SOURCE_SCRIPT" "$INSTALLED_SCRIPT"
+  chmod +x "$INSTALLED_SCRIPT"
+  [ -f "$SOURCE_ICON" ] && cp "$SOURCE_ICON" "$INSTALLED_ICON"
+  echo "Copied files to $INSTALL_DIR"
+
   # Use python3 for safe TOML manipulation
-  python3 - "$CONFIG" "$NOTIFY_SCRIPT" "add" <<'PYEOF'
+  python3 - "$CONFIG" "$INSTALLED_SCRIPT" "add" <<'PYEOF'
 import sys, os
 
 config_path = sys.argv[1]
@@ -176,7 +200,8 @@ with open(config_path, 'w') as f:
 PYEOF
 
   echo "Installed zjbar notify into $CONFIG"
-  echo "Notify script: $NOTIFY_SCRIPT"
+  echo "Notify script: $INSTALLED_SCRIPT"
+  echo "The repo can now be safely deleted."
 }
 
 case "${1:-}" in

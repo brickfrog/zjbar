@@ -66,6 +66,7 @@ zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将�
 安装 zjbar 插件以自动注册 hook：
 
 ```
+/plugin marketplace add imroc/zjbar
 /plugin install zjbar@zjbar
 ```
 
@@ -103,7 +104,7 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 make install-codex-hooks
 ```
 
-这会在你的 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。可通过 `CODEX_CONFIG` 环境变量覆盖配置路径。
+这会将通知脚本和图标复制到 `~/.codex/zjbar/`，并在 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。安装后可安全删除 repo。可通过 `CODEX_HOME` 环境变量覆盖 Codex 配置目录。
 
 卸载：
 
