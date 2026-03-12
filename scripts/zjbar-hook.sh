@@ -12,6 +12,9 @@
 # Read hook JSON from stdin
 INPUT=$(cat)
 
+# Resolve plugin root: CodeBuddy uses CODEBUDDY_PLUGIN_ROOT, Claude Code uses CLAUDE_PLUGIN_ROOT
+PLUGIN_ROOT="${CODEBUDDY_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+
 # Extract all fields in a single jq call (required dependency)
 eval "$(echo "$INPUT" | jq -r '
   @sh "HOOK_EVENT=\(.hook_event_name // "")",
@@ -309,7 +312,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
           case "$(uname)" in
           Darwin)
             [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-            ICON_PATH="${CLAUDE_PLUGIN_ROOT:-}/assets/$ICON_FILE"
+            ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
             ICON_FLAG=()
             [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
             if command -v terminal-notifier >/dev/null 2>&1; then
@@ -433,7 +436,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
         case "$(uname)" in
         Darwin)
           [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="${CLAUDE_PLUGIN_ROOT:-}/assets/$ICON_FILE"
+          ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
           ICON_FLAG=()
           [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
           if command -v terminal-notifier >/dev/null 2>&1; then
