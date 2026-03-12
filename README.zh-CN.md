@@ -9,7 +9,7 @@
 - **Powerline 标签栏** — Tokyo Night 主题标签栏，段落之间使用尖锐的 powerline 箭头
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
 - **可点击标签** — 点击任意标签即可切换
-- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、OpenCode 及其他兼容工具）
+- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、Codex、OpenCode 及其他兼容工具）
 - **多实例同步** — 所有 Zellij 标签页展示所有 AI 会话的统一视图
 
 ## 安装
@@ -95,6 +95,22 @@ CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 
 然后在使用 zjbar 布局的 Zellij 会话中启动 OpenCode，活动指示器将自动显示。
 
+### Codex CLI
+
+配置 Codex 使用 zjbar 通知脚本：
+
+```bash
+make install-codex-hooks
+```
+
+这会在你的 Codex 配置文件（`~/.codex/config.toml` 或 `~/.codex-internal/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。
+
+卸载：
+
+```bash
+make uninstall-codex-hooks
+```
+
 ### 其他工具
 
 zjbar 使用统一的 JSON 事件协议。任何 AI 编程工具都可以通过 `zellij pipe --name zjbar` 发送事件来集成。详见[工作原理](#工作原理)部分。
@@ -129,7 +145,7 @@ brew install terminal-notifier
 
 ## 活动符号
 
-集成 AI 编程工具（Claude Code、OpenCode 等）后，zjbar 在每个标签上显示实时活动指示器：
+集成 AI 编程工具（Claude Code、Codex、OpenCode 等）后，zjbar 在每个标签上显示实时活动指示器：
 
 | 符号 | 含义                |
 | ---- | ------------------- |
@@ -190,6 +206,7 @@ plugin location="zjbar.wasm" {
 
 ```
 Claude Code hook → zjbar-hook.sh        → zellij pipe → 插件 → 渲染
+Codex notify     → zjbar-codex-notify.sh → zellij pipe → 插件 → 渲染
 OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
 ```
 

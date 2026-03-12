@@ -9,7 +9,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI co
 - **Powerline tab bar** — Tokyo Night themed tab bar with sharp powerline arrows between segments
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Clickable tabs** — click any tab to switch
-- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, OpenCode, and other compatible tools)
+- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, Codex, OpenCode, and other compatible tools)
 - **Multi-instance sync** — all Zellij tabs show a unified view of all AI sessions
 
 ## Install
@@ -95,6 +95,22 @@ Add the zjbar plugin to your `opencode.json`:
 
 Then start OpenCode inside a Zellij session with the zjbar layout — activity indicators will appear automatically.
 
+### Codex CLI
+
+Configure Codex to use the zjbar notify script:
+
+```bash
+make install-codex-hooks
+```
+
+This adds a `notify` entry to your Codex config (`~/.codex/config.toml` or `~/.codex-internal/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary.
+
+To uninstall:
+
+```bash
+make uninstall-codex-hooks
+```
+
 ### Other tools
 
 zjbar uses a unified JSON event protocol. Any AI coding tool can integrate by sending events via `zellij pipe --name zjbar`. See the [How It Works](#how-it-works) section for details.
@@ -129,7 +145,7 @@ You can customize which events trigger notifications and the notification mode v
 
 ## Activity Symbols
 
-When integrated with an AI coding agent (Claude Code, OpenCode, etc.), zjbar shows live activity indicators on each tab:
+When integrated with an AI coding agent (Claude Code, Codex, OpenCode, etc.), zjbar shows live activity indicators on each tab:
 
 | Symbol | Meaning                   |
 | ------ | ------------------------- |
@@ -190,6 +206,7 @@ See [layout.kdl](layout.kdl) for the full list of available options with default
 
 ```
 Claude Code hook → zjbar-hook.sh        → zellij pipe → plugin → render
+Codex notify     → zjbar-codex-notify.sh → zellij pipe → plugin → render
 OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → plugin → render
 ```
 

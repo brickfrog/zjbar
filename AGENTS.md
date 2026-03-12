@@ -2,7 +2,7 @@
 
 ## Overview
 
-zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional AI coding agent activity awareness (Claude Code, OpenCode, etc.).
+zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional AI coding agent activity awareness (Claude Code, Codex, OpenCode, etc.).
 
 ## Architecture
 
@@ -18,7 +18,9 @@ hooks/
 └── hooks.json                # Claude Code hook event definitions (10 events)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
-└── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
+├── install-hooks.sh          # Claude Code hook installer (used by `make install-hooks`)
+├── zjbar-codex-notify.sh     # Codex CLI notify → zellij pipe bridge
+└── install-codex-hooks.sh    # Codex notify installer (used by `make install-codex-hooks`)
 opencode-plugin/              # npm package: zjbar-opencode
 ├── src/index.ts              # OpenCode plugin → zellij pipe bridge (TypeScript)
 ├── package.json              # npm package config
@@ -26,6 +28,7 @@ opencode-plugin/              # npm package: zjbar-opencode
 assets/
 ├── claude-logo.png           # Claude Code logo (used by hook for desktop notifications)
 ├── codebuddy-logo.png        # CodeBuddy logo
+├── codex-logo.png            # Codex CLI logo
 └── opencode-logo.png         # OpenCode logo
 .claude-plugin/
 ├── marketplace.json          # Claude Code plugin marketplace listing
@@ -186,6 +189,21 @@ tmux -L zjbar_test kill-server
   ```
 - **Hook events flow**: Claude Code → hook script (runs in separate process) → `zellij pipe` → WASM `pipe()` → `event_handler::handle_hook_event()` → Activity state update → re-render.
 
+### Codex CLI integration
+
+- **Integration method**: Codex uses `notify` config in `~/.codex/config.toml` (or `~/.codex-internal/config.toml` for Codex Internal). Unlike Claude Code hooks, Codex only has one event: `agent-turn-complete`.
+- **Notify script**: `scripts/zjbar-codex-notify.sh` — receives JSON via `$1` (command-line argument, not stdin), maps `agent-turn-complete` to a `Stop` hook event, and sends to `zellij pipe --name zjbar`.
+- **Install**: `make install-codex-hooks` or `scripts/install-codex-hooks.sh`. This adds `notify = ["/path/to/zjbar-codex-notify.sh"]` as a top-level key in `config.toml`.
+- **Uninstall**: `make uninstall-codex-hooks` or `scripts/install-codex-hooks.sh --uninstall`.
+- **Limitations**: Only the Done (checkmark) state is supported — no PreToolUse, Thinking, or Waiting states since Codex doesn't expose granular hook events.
+- **Summary extraction**: The `last-assistant-message` field from the Codex notification JSON is used directly for desktop notification summaries.
+- **Manual test**: Send a mock event directly:
+  ```bash
+  zellij -s <session> pipe --name zjbar -- \
+    '{"source":"codex","pane_id":0,"session_id":"test","hook_event":"Stop","tool_name":null}'
+  ```
+- **Events flow**: Codex agent-turn-complete → notify script (`$1` JSON) → `zellij pipe` → WASM `pipe()` → `event_handler::handle_hook_event()` → Activity::Done → re-render.
+
 ### OpenCode integration
 
 - **Plugin source**: `opencode-plugin/src/index.ts`
@@ -206,7 +224,7 @@ tmux -L zjbar_test kill-server
 ## Key Concepts
 
 - **Rendering**: `render.rs` outputs raw ANSI escape codes via `print!()` in the `render()` method. Zellij captures stdout as pane content.
-- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
+- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via `make install-hooks`), Codex uses `zjbar-codex-notify.sh` (registered via `make install-codex-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
 - **Multi-instance sync**: Each tab has its own plugin instance. They sync state via `pipe_message_to_plugin()` with names like `zjbar:sync`, `zjbar:request`.
 - **Configuration**: All visual and behavioral settings are parsed from the KDL layout plugin block via `BarConfig::from_kdl()` in `config.rs`. No runtime settings file.
 
