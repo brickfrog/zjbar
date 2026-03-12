@@ -9,7 +9,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI co
 - **Powerline tab bar** — Tokyo Night themed tab bar with sharp powerline arrows between segments
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Clickable tabs** — click any tab to switch
-- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, OpenCode, and other compatible tools)
+- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, OpenCode, and other compatible tools)
 - **Multi-instance sync** — all Zellij tabs show a unified view of all AI sessions
 
 ## Install
@@ -18,76 +18,69 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI co
 
 - [Zellij](https://zellij.dev)
 
-### Option 1: Claude Code plugin (recommended for Claude Code users)
+### Option 1: Use release binary
 
-Install as a Claude Code plugin to get automatic hook registration and a one-command setup:
+Add the zjbar plugin to your Zellij layout file (e.g. `~/.config/zellij/layouts/zjbar.kdl`):
 
+```kdl
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true {
+            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.12/zjbar.wasm"
+        }
+    }
+}
 ```
-/plugin marketplace add imroc/zjbar
-/plugin install zjbar@zjbar
+
+Then start Zellij with this layout:
+
+```bash
+zellij --layout ~/.config/zellij/layouts/zjbar.kdl
 ```
 
-Then download the WASM plugin and layouts:
+> See [layout.kdl](layout.kdl) for a full example with all available color and style options.
 
-```
-/zjbar:install
+### Option 2: Build from source
+
+Prerequisites: [Rust](https://rustup.rs)
+
+```bash
+git clone https://github.com/imroc/zjbar.git
+cd zjbar
+make install
 ```
 
-Restart Claude Code for hooks to take effect, then start Zellij:
+This builds the WASM binary, copies it to `~/.config/zellij/plugins/`, and installs the layout files. Then start Zellij:
 
 ```bash
 zellij --layout zjbar
 ```
 
-### Option 2: Zellij layout only
+## AI Tool Integration (optional)
 
-Add the plugin to your Zellij layout directly (no AI tool integration):
+zjbar supports multiple AI coding agents. Each tool uses its own bridge to forward events to the zjbar plugin via `zellij pipe`.
 
-```kdl
-default_tab_template {
-    children
-    pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.12/zjbar.wasm"
-    }
-}
+### Claude Code / CodeBuddy
+
+Install the zjbar plugin to automatically register hooks:
+
+```
+/plugin install zjbar@zjbar
 ```
 
-### Option 3: Build from source
+Restart Claude Code / CodeBuddy for hooks to take effect.
 
-Prerequisites: [Rust](https://rustup.rs), [jq](https://jqlang.github.io/jq/) (for hooks)
-
-```bash
-git clone https://github.com/imroc/zjbar.git
-cd zjbar
-./install.sh
-```
-
-Or use make targets directly:
+For manual hook registration (without the plugin system), run:
 
 ```bash
-make               # build wasm + update plugin
-make install       # build + install layouts
-make install-hooks # register Claude Code hooks
-make uninstall     # remove plugin and layouts
-make release       # create GitHub release (requires tag on HEAD)
+make install-hooks
 ```
 
 The hook installer auto-detects the settings path (`~/.claude/settings.json`). To specify a custom path:
 
 ```bash
 CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
-```
-
-## AI Tool Integration
-
-zjbar supports multiple AI coding agents. Each tool uses its own bridge to forward events to the zjbar plugin via `zellij pipe`.
-
-### Claude Code
-
-If installed via Option 1 above, Claude Code integration is already set up. For manual installation, run:
-
-```bash
-make install-hooks
 ```
 
 ### OpenCode
@@ -106,7 +99,7 @@ Then start OpenCode inside a Zellij session with the zjbar layout — activity i
 
 zjbar uses a unified JSON event protocol. Any AI coding tool can integrate by sending events via `zellij pipe --name zjbar`. See the [How It Works](#how-it-works) section for details.
 
-### Optional: click-to-focus notifications
+### Desktop notifications (optional)
 
 ```bash
 brew install terminal-notifier
@@ -206,12 +199,6 @@ All integrations use a unified JSON payload with a `source` field to identify th
 
 ```bash
 make uninstall
-```
-
-If installed as a Claude Code plugin:
-
-```
-/plugin uninstall zjbar@zjbar
 ```
 
 ## License

@@ -9,7 +9,7 @@
 - **Powerline 标签栏** — Tokyo Night 主题标签栏，段落之间使用尖锐的 powerline 箭头
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
 - **可点击标签** — 点击任意标签即可切换
-- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、OpenCode 及其他兼容工具）
+- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、OpenCode 及其他兼容工具）
 - **多实例同步** — 所有 Zellij 标签页展示所有 AI 会话的统一视图
 
 ## 安装
@@ -18,76 +18,69 @@
 
 - [Zellij](https://zellij.dev)
 
-### 方式一：Claude Code 插件（适用于 Claude Code 用户）
+### 方式一：使用发布版二进制文件
 
-安装为 Claude Code 插件，可自动注册 hook 并一键安装：
+在你的 Zellij 布局文件（如 `~/.config/zellij/layouts/zjbar.kdl`）中添加 zjbar 插件：
 
+```kdl
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true {
+            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.12/zjbar.wasm"
+        }
+    }
+}
 ```
-/plugin marketplace add imroc/zjbar
-/plugin install zjbar@zjbar
+
+然后使用该布局启动 Zellij：
+
+```bash
+zellij --layout ~/.config/zellij/layouts/zjbar.kdl
 ```
 
-然后下载 WASM 插件和布局文件：
+> 完整配置示例请参见 [layout.kdl](layout.kdl)，其中包含所有可用的颜色和样式选项。
 
-```
-/zjbar:install
+### 方式二：从源码构建
+
+前置条件：[Rust](https://rustup.rs)
+
+```bash
+git clone https://github.com/imroc/zjbar.git
+cd zjbar
+make install
 ```
 
-重启 Claude Code 使 hook 生效，然后启动 Zellij：
+这会构建 WASM 二进制文件，将其复制到 `~/.config/zellij/plugins/`，并安装布局文件。然后启动 Zellij：
 
 ```bash
 zellij --layout zjbar
 ```
 
-### 方式二：仅 Zellij 布局
-
-直接在 Zellij 布局文件中添加插件（无 AI 工具集成）：
-
-```kdl
-default_tab_template {
-    children
-    pane size=1 borderless=true {
-        plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.12/zjbar.wasm"
-    }
-}
-```
-
-### 方式三：从源码构建
-
-前置条件：[Rust](https://rustup.rs)、[jq](https://jqlang.github.io/jq/)（用于 hook）
-
-```bash
-git clone https://github.com/imroc/zjbar.git
-cd zjbar
-./install.sh
-```
-
-或直接使用 make 命令：
-
-```bash
-make               # 构建 wasm + 更新插件
-make install       # 构建 + 安装布局文件
-make install-hooks # 注册 Claude Code hooks
-make uninstall     # 移除插件和布局文件
-make release       # 创建 GitHub release（需要 HEAD 上有 tag）
-```
-
-hook 安装脚本会自动使用设置文件路径 `~/.claude/settings.json`。如需指定自定义路径：
-
-```bash
-CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
-```
-
-## AI 工具集成
+## AI 工具集成（可选）
 
 zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将事件转发给 zjbar 插件（通过 `zellij pipe`）。
 
-### Claude Code
+### Claude Code / CodeBuddy
 
-如果通过上述方式一安装，Claude Code 集成已自动配置。手动安装请运行：
+安装 zjbar 插件以自动注册 hook：
+
+```
+/plugin install zjbar@zjbar
+```
+
+重启 Claude Code / CodeBuddy 使 hook 生效。
+
+如需手动注册 hook（不使用插件系统），运行：
 
 ```bash
 make install-hooks
+```
+
+hook 安装脚本会自动检测设置文件路径（`~/.claude/settings.json`）。如需指定自定义路径：
+
+```bash
+CLAUDE_SETTINGS=~/.codebuddy/settings.json make install-hooks
 ```
 
 ### OpenCode
@@ -106,7 +99,7 @@ make install-hooks
 
 zjbar 使用统一的 JSON 事件协议。任何 AI 编程工具都可以通过 `zellij pipe --name zjbar` 发送事件来集成。详见[工作原理](#工作原理)部分。
 
-### 可选：点击聚焦通知
+### 桌面通知（可选）
 
 ```bash
 brew install terminal-notifier
@@ -206,12 +199,6 @@ OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
 
 ```bash
 make uninstall
-```
-
-如果是作为 Claude Code 插件安装的：
-
-```
-/plugin uninstall zjbar@zjbar
 ```
 
 ## 许可证
