@@ -72,6 +72,12 @@ Install the zjbar plugin to automatically register hooks:
 
 Restart Claude Code / CodeBuddy for hooks to take effect.
 
+To update to the latest version:
+
+```
+/plugin update
+```
+
 ### OpenCode
 
 Add the zjbar plugin to your `opencode.json`:
@@ -84,6 +90,8 @@ Add the zjbar plugin to your `opencode.json`:
 
 Then start OpenCode inside a Zellij session with the zjbar layout — activity indicators will appear automatically.
 
+To update, restart OpenCode — it will automatically fetch the latest version since `@latest` is specified.
+
 ### Codex CLI
 
 Configure Codex to use the zjbar notify script:
@@ -94,7 +102,7 @@ make install-codex-hooks
 
 This copies the notify script and icon to `~/.codex/zjbar/` and adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. The repo can be safely deleted after installation. Override the Codex config directory with `CODEX_HOME` env var.
 
-To uninstall:
+To update, re-run `make install-codex-hooks` from the latest repo. To uninstall:
 
 ```bash
 make uninstall-codex-hooks
@@ -106,7 +114,17 @@ make uninstall-codex-hooks
 gemini extensions install https://github.com/imroc/zjbar
 ```
 
-This uses Gemini CLI's native extension system and installs directly from GitHub. Hooks are loaded automatically. To uninstall: `gemini extensions uninstall zjbar`.
+This uses Gemini CLI's native extension system and installs directly from GitHub. Hooks are loaded automatically.
+
+To update to the latest version:
+
+```bash
+gemini extensions update zjbar
+```
+
+> Tip: Add `--auto-update` during install to enable automatic updates: `gemini extensions install https://github.com/imroc/zjbar --auto-update`
+
+To uninstall: `gemini extensions uninstall zjbar`.
 
 zjbar tracks Gemini's full agent lifecycle: Thinking, Tool use, and Done states.
 

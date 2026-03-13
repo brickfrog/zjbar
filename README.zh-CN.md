@@ -72,6 +72,12 @@ zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将�
 
 重启 Claude Code / CodeBuddy 使 hook 生效。
 
+更新到最新版本：
+
+```
+/plugin update
+```
+
 ### OpenCode
 
 在 `opencode.json` 中添加 zjbar 插件：
@@ -84,6 +90,8 @@ zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将�
 
 然后在使用 zjbar 布局的 Zellij 会话中启动 OpenCode，活动指示器将自动显示。
 
+更新时重启 OpenCode 即可——因为配置了 `@latest`，它会自动拉取最新版本。
+
 ### Codex CLI
 
 配置 Codex 使用 zjbar 通知脚本：
@@ -94,7 +102,7 @@ make install-codex-hooks
 
 这会将通知脚本和图标复制到 `~/.codex/zjbar/`，并在 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。安装后可安全删除 repo。可通过 `CODEX_HOME` 环境变量覆盖 Codex 配置目录。
 
-卸载：
+更新时从最新 repo 重新运行 `make install-codex-hooks` 即可。卸载：
 
 ```bash
 make uninstall-codex-hooks
@@ -106,7 +114,17 @@ make uninstall-codex-hooks
 gemini extensions install https://github.com/imroc/zjbar
 ```
 
-使用 Gemini CLI 的原生扩展系统，直接从 GitHub 安装。hooks 会自动加载。卸载：`gemini extensions uninstall zjbar`。
+使用 Gemini CLI 的原生扩展系统，直接从 GitHub 安装。hooks 会自动加载。
+
+更新到最新版本：
+
+```bash
+gemini extensions update zjbar
+```
+
+> 提示：安装时加 `--auto-update` 可启用自动更新：`gemini extensions install https://github.com/imroc/zjbar --auto-update`
+
+卸载：`gemini extensions uninstall zjbar`。
 
 zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。
 
