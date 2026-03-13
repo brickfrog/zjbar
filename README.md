@@ -102,23 +102,21 @@ make uninstall-codex-hooks
 
 ### Gemini CLI
 
-#### Option A: Manual install (recommended for most users)
+#### Option A: Direct extension install (recommended)
+
+```bash
+gemini extensions install https://github.com/imroc/zjbar
+```
+
+This uses Gemini CLI's native extension system and installs directly from GitHub. Hooks are loaded automatically. To uninstall: `gemini extensions uninstall zjbar`.
+
+#### Option B: Manual install
 
 ```bash
 make install-gemini-hooks
 ```
 
 This copies the hook script and icon to `~/.gemini/zjbar/` and adds hook entries to your Gemini CLI settings (`~/.gemini/settings.json`). The repo can be safely deleted after installation. Override the Gemini config directory with `GEMINI_HOME` env var. To uninstall: `make uninstall-gemini-hooks`.
-
-#### Option B: Extension (development)
-
-For development or advanced users, use Gemini CLI's native extension system:
-
-```bash
-make setup-gemini-extension
-```
-
-This links the repo and temporarily prepares hooks for Gemini format. To revert: `make unlink-gemini-extension`.
 
 zjbar tracks Gemini's full agent lifecycle: Thinking, Tool use, and Done states.
 

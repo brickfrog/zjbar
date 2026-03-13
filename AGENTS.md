@@ -15,8 +15,9 @@ src/
 ├── event_handler.rs  # Maps hook events to Activity states (tool-agnostic)
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
 hooks/
-├── hooks.json                # Claude Code hook event definitions (10 events)
-└── hooks-gemini.json         # Gemini CLI hook event definitions (6 events, for extension use)
+└── hooks.json                # Gemini CLI hook event definitions (6 events, for extension use)
+claude-hooks/
+└── hooks.json                # Claude Code hook event definitions (10 events)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
 ├── install-hooks.sh          # Claude Code hook installer (legacy, use plugin instead)
@@ -215,10 +216,11 @@ tmux -L zjbar_test kill-server
 
 - **Integration method**: Gemini CLI uses hooks configured in `~/.gemini/settings.json`. Unlike Claude Code (which passes hook events via stdin JSON with `hook_event_name`), Gemini CLI hooks are registered per-event and receive tool-specific input via stdin. The event name is passed via the `ZJBAR_GEMINI_EVENT` environment variable set in the wrapper command.
 - **Hook script**: `scripts/zjbar-gemini-hook.sh` — reads Gemini hook JSON from stdin, maps Gemini events to zjbar events, and sends to `zellij pipe --name zjbar`. Outputs `{}` to stdout (Gemini requires valid JSON on stdout).
-- **Install (extension method, development)**: For local development, `make setup-gemini-extension` or `scripts/setup-gemini-extension.sh link`. This temporarily swaps `hooks.json` to Gemini format and links the extension. Useful for testing and development.
-- **Install (legacy method, recommended for users)**: `make install-gemini-hooks` or `scripts/install-gemini-hooks.sh`. This copies the hook script and icon to `$GEMINI_HOME/zjbar/` (default `~/.gemini/zjbar/`) and adds hook entries to `settings.json`. The repo can be safely deleted after installation. **Recommended for end users** because it doesn't require repo cloning.
-- **Uninstall**: `make uninstall-gemini-hooks` (legacy) or `scripts/setup-gemini-extension.sh unlink` (development).
-- **Note**: The repo contains two hooks files: `hooks/hooks.json` (Claude Code format, required for Claude Code/CodeBuddy plugins) and `hooks/hooks-gemini.json` (Gemini format). When using Gemini extension mode locally, `setup-gemini-extension.sh link` swaps them automatically.
+- **Install (extension method, direct)**: Users can install directly via `gemini extensions install https://github.com/imroc/zjbar`. This works seamlessly because `hooks/hooks.json` is now Gemini format (required by Gemini's extension system).
+- **Install (legacy method, also works)**: `make install-gemini-hooks` or `scripts/install-gemini-hooks.sh`. This copies the hook script and icon to `$GEMINI_HOME/zjbar/` (default `~/.gemini/zjbar/`) and adds hook entries to `settings.json`. The repo can be safely deleted after installation.
+- **Install (local development)**: `make setup-gemini-extension` or `scripts/setup-gemini-extension.sh link` to link the extension for development.
+- **Uninstall**: `make uninstall-gemini-hooks` (legacy) or `scripts/setup-gemini-extension.sh unlink` (extension method).
+- **Architecture note**: `hooks/hooks.json` is Gemini format (used by both Gemini extensions and `make install-gemini-hooks`). `claude-hooks/hooks.json` is Claude Code format (used by Claude Code/CodeBuddy plugins via `.claude-plugin/plugin.json`). This separation allows clean plugin-specific formats without conflicts.
 - **Event mapping**:
   | Gemini Hook | zjbar Event | Activity |
   |------------|-------------|----------|
@@ -301,6 +303,7 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 5. **`.claude-plugin/plugin.json`** — `version` field
 6. **`opencode-plugin/package.json`** — `version` field (must match the release version)
 7. **`gemini-extension.json`** — `version` field
+8. **`Cargo.lock`** — auto-updated by `cargo build`, commit when `Cargo.toml` version changes
 
 Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
