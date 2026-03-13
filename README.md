@@ -166,19 +166,21 @@ You can customize which events trigger notifications and the notification mode v
 
 When integrated with an AI coding agent (Claude Code, Codex, OpenCode, Gemini CLI, etc.), zjbar shows live activity indicators on each tab:
 
-| Symbol | Meaning                   |
-| ------ | ------------------------- |
-| ◆      | Session starting          |
-| ●      | Thinking                  |
-| ⚡     | Running Bash              |
-| ◉      | Reading / searching files |
-| ✎      | Editing / writing files   |
-| ⊜      | Spawning subagent         |
-| ◈      | Web search / fetch        |
-| ⚙      | Other tool                |
-| ▶      | Waiting for user prompt   |
-| ⚠      | Waiting for permission    |
-| ✓      | Done                      |
+| Symbol | Meaning                   | Claude Code | CodeBuddy | Gemini CLI | OpenCode | Codex |
+| ------ | ------------------------- | :---------: | :-------: | :--------: | :------: | :---: |
+| ◆      | Session starting          |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ●      | Thinking                  |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ⚡     | Running Bash              |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ◉      | Reading / searching files |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ✎      | Editing / writing files   |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ⊜      | Spawning subagent         |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ◈      | Web search / fetch        |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ⚙      | Other tool                |      ✔      |     ✔     |     ✔      |    ✔     |       |
+| ▶      | Waiting for user prompt   |      ✔      |     ✔     |            |          |       |
+| ⚠      | Waiting for permission    |      ✔      |     ✔     |            |    ✔     |       |
+| ✓      | Done                      |      ✔      |     ✔     |     ✔      |    ✔     |   ✔   |
+
+> **Note:** Codex CLI only provides the `agent-turn-complete` event (mapped to ✓ Done) and does not support other granular states. Gemini CLI lacks hook events for permission requests and user input prompts.
 
 ## Configuration
 
