@@ -9,7 +9,7 @@ A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI co
 - **Powerline tab bar** — Tokyo Night themed tab bar with sharp powerline arrows between segments
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Clickable tabs** — click any tab to switch
-- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, Codex, OpenCode, and other compatible tools)
+- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, Codex, OpenCode, Gemini CLI, and other compatible tools)
 - **Multi-instance sync** — all Zellij tabs show a unified view of all AI sessions
 
 ## Install
@@ -100,6 +100,22 @@ To uninstall:
 make uninstall-codex-hooks
 ```
 
+### Gemini CLI
+
+Configure Gemini CLI to use zjbar hooks:
+
+```bash
+make install-gemini-hooks
+```
+
+This copies the hook script and icon to `~/.gemini/zjbar/` and adds hook entries to your Gemini CLI settings (`~/.gemini/settings.json`). zjbar tracks Gemini's full agent lifecycle: Thinking, Tool use, and Done states. The repo can be safely deleted after installation. Override the Gemini config directory with `GEMINI_HOME` env var.
+
+To uninstall:
+
+```bash
+make uninstall-gemini-hooks
+```
+
 ### Other tools
 
 zjbar uses a unified JSON event protocol. Any AI coding tool can integrate by sending events via `zellij pipe --name zjbar`. See the [How It Works](#how-it-works) section for details.
@@ -134,7 +150,7 @@ You can customize which events trigger notifications and the notification mode v
 
 ## Activity Symbols
 
-When integrated with an AI coding agent (Claude Code, Codex, OpenCode, etc.), zjbar shows live activity indicators on each tab:
+When integrated with an AI coding agent (Claude Code, Codex, OpenCode, Gemini CLI, etc.), zjbar shows live activity indicators on each tab:
 
 | Symbol | Meaning                   |
 | ------ | ------------------------- |
@@ -197,6 +213,7 @@ See [layout.kdl](layout.kdl) for the full list of available options with default
 Claude Code hook → zjbar-hook.sh        → zellij pipe → plugin → render
 Codex notify     → zjbar-codex-notify.sh → zellij pipe → plugin → render
 OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → plugin → render
+Gemini CLI hook  → zjbar-gemini-hook.sh  → zellij pipe → plugin → render
 ```
 
 All integrations use a unified JSON payload with a `source` field to identify the AI tool.

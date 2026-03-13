@@ -9,7 +9,7 @@
 - **Powerline 标签栏** — Tokyo Night 主题标签栏，段落之间使用尖锐的 powerline 箭头
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
 - **可点击标签** — 点击任意标签即可切换
-- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、Codex、OpenCode 及其他兼容工具）
+- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、Codex、OpenCode、Gemini CLI 及其他兼容工具）
 - **多实例同步** — 所有 Zellij 标签页展示所有 AI 会话的统一视图
 
 ## 安装
@@ -100,6 +100,22 @@ make install-codex-hooks
 make uninstall-codex-hooks
 ```
 
+### Gemini CLI
+
+配置 Gemini CLI 使用 zjbar hooks：
+
+```bash
+make install-gemini-hooks
+```
+
+这会将 hook 脚本和图标复制到 `~/.gemini/zjbar/`，并在 Gemini CLI 配置文件（`~/.gemini/settings.json`）中添加 hook 配置项。zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。安装后可安全删除 repo。可通过 `GEMINI_HOME` 环境变量覆盖 Gemini 配置目录。
+
+卸载：
+
+```bash
+make uninstall-gemini-hooks
+```
+
 ### 其他工具
 
 zjbar 使用统一的 JSON 事件协议。任何 AI 编程工具都可以通过 `zellij pipe --name zjbar` 发送事件来集成。详见[工作原理](#工作原理)部分。
@@ -134,7 +150,7 @@ brew install terminal-notifier
 
 ## 活动符号
 
-集成 AI 编程工具（Claude Code、Codex、OpenCode 等）后，zjbar 在每个标签上显示实时活动指示器：
+集成 AI 编程工具（Claude Code、Codex、OpenCode、Gemini CLI 等）后，zjbar 在每个标签上显示实时活动指示器：
 
 | 符号 | 含义           |
 | ---- | -------------- |
@@ -197,6 +213,7 @@ plugin location="zjbar.wasm" {
 Claude Code hook → zjbar-hook.sh        → zellij pipe → 插件 → 渲染
 Codex notify     → zjbar-codex-notify.sh → zellij pipe → 插件 → 渲染
 OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
+Gemini CLI hook  → zjbar-gemini-hook.sh  → zellij pipe → 插件 → 渲染
 ```
 
 所有集成使用统一的 JSON payload，通过 `source` 字段标识 AI 工具来源。

@@ -2,7 +2,7 @@
 
 ## Overview
 
-zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional AI coding agent activity awareness (Claude Code, Codex, OpenCode, etc.).
+zjbar is a Zellij WASM plugin that replaces the default tab bar with a Tokyo Night powerline-themed status bar, with optional AI coding agent activity awareness (Claude Code, Codex, OpenCode, Gemini CLI, etc.).
 
 ## Architecture
 
@@ -20,7 +20,9 @@ scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
 ├── install-hooks.sh          # Claude Code hook installer (legacy, use plugin instead)
 ├── zjbar-codex-notify.sh     # Codex CLI notify → zellij pipe bridge
-└── install-codex-hooks.sh    # Codex notify installer (used by `make install-codex-hooks`)
+├── install-codex-hooks.sh    # Codex notify installer (used by `make install-codex-hooks`)
+├── zjbar-gemini-hook.sh      # Gemini CLI hook → zellij pipe bridge
+└── install-gemini-hooks.sh   # Gemini CLI hook installer (used by `make install-gemini-hooks`)
 opencode-plugin/              # npm package: zjbar-opencode
 ├── src/index.ts              # OpenCode plugin → zellij pipe bridge (TypeScript)
 ├── package.json              # npm package config
@@ -29,6 +31,7 @@ assets/
 ├── claude-logo.png           # Claude Code logo (used by hook for desktop notifications)
 ├── codebuddy-logo.png        # CodeBuddy logo
 ├── codex-logo.png            # Codex CLI logo
+├── gemini-logo.png           # Gemini CLI logo
 └── opencode-logo.png         # OpenCode logo
 .claude-plugin/
 ├── marketplace.json          # Claude Code plugin marketplace listing
@@ -204,6 +207,30 @@ tmux -L zjbar_test kill-server
   ```
 - **Events flow**: Codex agent-turn-complete → notify script (`$1` JSON) → `zellij pipe` → WASM `pipe()` → `event_handler::handle_hook_event()` → Activity::Done → re-render.
 
+### Gemini CLI integration
+
+- **Integration method**: Gemini CLI uses hooks configured in `~/.gemini/settings.json`. Unlike Claude Code (which passes hook events via stdin JSON with `hook_event_name`), Gemini CLI hooks are registered per-event and receive tool-specific input via stdin. The event name is passed via the `ZJBAR_GEMINI_EVENT` environment variable set in the wrapper command.
+- **Hook script**: `scripts/zjbar-gemini-hook.sh` — reads Gemini hook JSON from stdin, maps Gemini events to zjbar events, and sends to `zellij pipe --name zjbar`. Outputs `{}` to stdout (Gemini requires valid JSON on stdout).
+- **Install**: `make install-gemini-hooks` or `scripts/install-gemini-hooks.sh`. This copies the hook script and icon to `$GEMINI_HOME/zjbar/` (default `~/.gemini/zjbar/`) and adds hook entries to `settings.json`. The repo can be safely deleted after installation.
+- **Uninstall**: `make uninstall-gemini-hooks` or `scripts/install-gemini-hooks.sh --uninstall`. This removes the `$GEMINI_HOME/zjbar/` directory and all zjbar hook entries from `settings.json`.
+- **Event mapping**:
+  | Gemini Hook | zjbar Event | Activity |
+  |------------|-------------|----------|
+  | SessionStart | SessionStart | Init (◆) |
+  | BeforeAgent | UserPromptSubmit | Thinking (●) |
+  | BeforeTool | PreToolUse | Tool (⚡/◉/✎/etc.) |
+  | AfterTool | PostToolUse | Thinking (●) |
+  | AfterAgent | Stop | Done (✓) |
+  | SessionEnd | SessionEnd | (removed) |
+- **Tool name mapping**: Gemini uses different tool names than Claude Code. The hook script maps them: `run_shell_command` → Bash, `read_file`/`read_many_files` → Read, `write_file` → Write, `edit_file`/`replace` → Edit, `web_fetch` → WebFetch, `google_web_search` → WebSearch.
+- **Key difference from Claude Code**: Gemini hooks MUST output valid JSON to stdout (`{}`). Any non-JSON stdout causes parsing failure. All debug output must go to stderr.
+- **Manual test**: Send a mock event directly:
+  ```bash
+  zellij -s <session> pipe --name zjbar -- \
+    '{"source":"gemini","pane_id":0,"session_id":"test","hook_event":"PreToolUse","tool_name":"Bash"}'
+  ```
+- **Events flow**: Gemini CLI hook event → wrapper sets `ZJBAR_GEMINI_EVENT` → `zjbar-gemini-hook.sh` (stdin JSON) → map event + tool names → `zellij pipe` → WASM `pipe()` → `event_handler::handle_hook_event()` → Activity state update → re-render.
+
 ### OpenCode integration
 
 - **Plugin source**: `opencode-plugin/src/index.ts`
@@ -224,7 +251,7 @@ tmux -L zjbar_test kill-server
 ## Key Concepts
 
 - **Rendering**: `render.rs` outputs raw ANSI escape codes via `print!()` in the `render()` method. Zellij captures stdout as pane content.
-- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via plugin marketplace), Codex uses `zjbar-codex-notify.sh` (registered via `make install-codex-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`).
+- **IPC**: AI tool hooks/plugins → `zellij pipe --name zjbar` → plugin's `pipe()` method. All integrations use a unified JSON payload with a `source` field. Claude Code uses `zjbar-hook.sh` (registered via plugin marketplace), Codex uses `zjbar-codex-notify.sh` (registered via `make install-codex-hooks`), OpenCode uses the `zjbar-opencode` npm package (`opencode-plugin/src/index.ts`), Gemini CLI uses `zjbar-gemini-hook.sh` (registered via `make install-gemini-hooks`).
 - **Multi-instance sync**: Each tab has its own plugin instance. They sync state via `pipe_message_to_plugin()` with names like `zjbar:sync`, `zjbar:request`.
 - **Configuration**: All visual and behavioral settings are parsed from the KDL layout plugin block via `BarConfig::from_kdl()` in `config.rs`. No runtime settings file.
 
