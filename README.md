@@ -102,7 +102,9 @@ make install-codex-hooks
 
 This copies the notify script and icon to `~/.codex/zjbar/` and adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. The repo can be safely deleted after installation. Override the Codex config directory with `CODEX_HOME` env var.
 
-To update, re-run `make install-codex-hooks` from the latest repo. To uninstall:
+To update, re-run `make install-codex-hooks` from the latest repo.
+
+To uninstall:
 
 ```bash
 make uninstall-codex-hooks

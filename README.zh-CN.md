@@ -102,7 +102,9 @@ make install-codex-hooks
 
 这会将通知脚本和图标复制到 `~/.codex/zjbar/`，并在 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。安装后可安全删除 repo。可通过 `CODEX_HOME` 环境变量覆盖 Codex 配置目录。
 
-更新时从最新 repo 重新运行 `make install-codex-hooks` 即可。卸载：
+更新时从最新 repo 重新运行 `make install-codex-hooks` 即可。
+
+卸载：
 
 ```bash
 make uninstall-codex-hooks
