@@ -71,6 +71,7 @@ Zellij is an interactive terminal app, so use tmux to test the plugin programmat
 - **Pre-cleanup**: Kill any existing `zjbar_test` tmux server and Zellij session before starting a new one (`zellij delete-session zjbar_test --force`).
 - **Post-cleanup**: Always `tmux -L zjbar_test kill-server` after testing is complete (this kills the dedicated tmux server and all sessions/Zellij processes inside it).
 - **Auto-test before delivery**: For any change that can be verified via tmux (rendering, colors, tab behavior, click regions, status bar content), you MUST build, deploy, and run the tmux test automatically, then verify the output matches expectations before delivering to the user. Never ask the user to manually observe or confirm test results unless tmux verification is truly impossible (e.g. interactive mouse clicks, visual aesthetics). Default assumption: if it renders in the status bar, you can capture and verify it yourself.
+- **No confirmation needed**: Never ask the user for permission to run tmux tests, build commands, or any standard development operations (build, test, install, git operations, file creation/modification). Just do it. Be aggressive and autonomous — only ask the user when there is a genuine ambiguity in requirements or design decisions, never for routine execution.
 
 ### Basic workflow
 
