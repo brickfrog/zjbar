@@ -8,5 +8,6 @@
   },
   "license": "MIT",
   "repository": "https://github.com/imroc/zjbar",
-  "keywords": ["zellij", "status-bar", "hooks", "tokyo-night"]
+  "keywords": ["zellij", "status-bar", "hooks", "tokyo-night"],
+  "hooks": "hooks/hooks.json"
 }

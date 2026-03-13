@@ -102,19 +102,25 @@ make uninstall-codex-hooks
 
 ### Gemini CLI
 
-配置 Gemini CLI 使用 zjbar hooks：
+#### 方式 A：手动安装（推荐大多数用户）
 
 ```bash
 make install-gemini-hooks
 ```
 
-这会将 hook 脚本和图标复制到 `~/.gemini/zjbar/`，并在 Gemini CLI 配置文件（`~/.gemini/settings.json`）中添加 hook 配置项。zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。安装后可安全删除 repo。可通过 `GEMINI_HOME` 环境变量覆盖 Gemini 配置目录。
+这会将 hook 脚本和图标复制到 `~/.gemini/zjbar/`，并在 Gemini CLI 配置文件（`~/.gemini/settings.json`）中添加 hook 配置项。安装后可安全删除 repo。可通过 `GEMINI_HOME` 环境变量覆盖 Gemini 配置目录。卸载：`make uninstall-gemini-hooks`。
 
-卸载：
+#### 方式 B：扩展方式（开发）
+
+对于开发或高级用户，可使用 Gemini CLI 的原生扩展系统：
 
 ```bash
-make uninstall-gemini-hooks
+make setup-gemini-extension
 ```
+
+这会链接 repo 并临时为 Gemini 格式准备 hooks。恢复：`make unlink-gemini-extension`。
+
+zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。
 
 ### 其他工具
 
