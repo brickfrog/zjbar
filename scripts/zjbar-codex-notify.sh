@@ -163,6 +163,7 @@ cancel_stop_debounce
         if command -v terminal-notifier >/dev/null 2>&1; then
           terminal-notifier \
             "${ICON_FLAG[@]}" \
+            -group "zjbar-${ZELLIJ_PANE_ID}" \
             -title "$TITLE" \
             -message "$MESSAGE" \
             -execute "$FOCUS_CMD" &

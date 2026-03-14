@@ -128,7 +128,7 @@ function sendNotification(
       ? `open -a '${termProgram}' && zellij -s '${zellijSession}' pipe --name zjbar:focus -- ${paneId}`
       : `zellij -s '${zellijSession}' pipe --name zjbar:focus -- ${paneId}`;
 
-    const args = ["-title", title, "-message", message, "-execute", focusCmd];
+    const args = ["-title", title, "-message", message, "-execute", focusCmd, "-group", `zjbar-${paneId}`];
     if (existsSync(iconPath)) {
       args.unshift("-contentImage", iconPath);
     }
