@@ -1,7 +1,7 @@
 {
   "name": "zjbar",
   "displayName": "zjbar - Zellij Status Bar with AI Coding Agent Activity",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "description": "A Tokyo Night powerline-themed Zellij status bar with optional AI coding agent activity awareness (Claude Code, Codex, OpenCode, Gemini CLI)",
   "author": "imroc",
   "repository": "https://github.com/imroc/zjbar",
