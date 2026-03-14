@@ -30,6 +30,16 @@ eval "$(echo "$INPUT" | jq -r '
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
+# Skip noise notification types that shouldn't affect the status bar.
+# auth_success fires on every startup (login/auth) and would trigger
+# flash animation on the tab. permission_prompt duplicates the
+# PermissionRequest event.
+if [ "$HOOK_EVENT" = "Notification" ]; then
+  case "$NOTIF_TYPE" in
+  auth_success | permission_prompt) exit 0 ;;
+  esac
+fi
+
 # Ignore subagent events — only track the main agent.
 # When a hook fires inside a subagent, Claude Code includes an `agent_id`
 # field in the JSON payload.  We don't want subagent tool-use, thinking,
@@ -348,15 +358,6 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       fi
       ;;
     Notification)
-      # Skip desktop notification for noise notification types:
-      # - auth_success: fires on every startup (login/auth)
-      # - permission_prompt: duplicate of PermissionRequest event
-      SKIP_DESKTOP=false
-      case "$NOTIF_TYPE" in
-      auth_success | permission_prompt)
-        SKIP_DESKTOP=true
-        ;;
-      esac
       if [ -n "$NOTIF_TITLE" ]; then
         TITLE="$NOTIF_TITLE"
       else
@@ -415,7 +416,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
       ;;
     esac
 
-    if [ "$SHOULD_NOTIFY" = true ] && [ "${SKIP_DESKTOP:-false}" = false ]; then
+    if [ "$SHOULD_NOTIFY" = true ]; then
       # Rate-limit: one notification per pane per 10 seconds
       LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
       NOW=$(date +%s)
