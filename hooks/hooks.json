@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "SessionStart"
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "BeforeAgent"
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "BeforeTool"
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "AfterTool"
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "AfterAgent"
@@ -76,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${extensionPath}/scripts/zjbar-gemini-hook.sh'",
+            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
             "timeout": 5000,
             "env": {
               "ZJBAR_GEMINI_EVENT": "SessionEnd"
