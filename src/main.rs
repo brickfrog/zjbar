@@ -176,6 +176,7 @@ impl ZellijPlugin for State {
                     Err(_) => return false,
                 };
                 event_handler::handle_hook_event(self, payload);
+                self.broadcast_sessions();
                 true
             }
             "zjbar:focus" => {
