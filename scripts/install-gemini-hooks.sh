@@ -152,7 +152,7 @@ def make_hook_entry(event_name, script):
         "hooks": [
             {
                 "type": "command",
-                "command": f"bash -c 'test -f \"{script}\" && exec \"{script}\" || exit 0'",
+                "command": script,
                 "timeout": 5000,
                 "env": {
                     "ZJBAR_GEMINI_EVENT": event_name
