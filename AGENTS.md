@@ -37,7 +37,6 @@ assets/
 .claude-plugin/
 ├── marketplace.json          # Claude Code plugin marketplace listing
 └── plugin.json               # Claude Code plugin metadata
-gemini-extension.json         # Gemini CLI extension metadata (for `gemini extensions install`)
 install.sh                    # Bootstrap installer (checks prerequisites, delegates to make)
 layout.kdl                    # Default Zellij layout with zjbar
 layout.swap.kdl               # Swap layout for stacked/alternate pane arrangements
@@ -298,8 +297,7 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 4. **`.claude-plugin/marketplace.json`** — both `version` fields
 5. **`.claude-plugin/plugin.json`** — `version` field
 6. **`opencode-plugin/package.json`** — `version` field (must match the release version)
-7. **`gemini-extension.json`** — `version` field
-8. **`Cargo.lock`** — auto-updated by `cargo build`, commit when `Cargo.toml` version changes
+7. **`Cargo.lock`** — auto-updated by `cargo build`, commit when `Cargo.toml` version changes
 
 Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
 
