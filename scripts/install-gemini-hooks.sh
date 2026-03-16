@@ -147,6 +147,13 @@ gemini_events = [
 ]
 
 # Build the hook entry for each event
+home = os.path.expanduser('~')
+# Use $HOME variable for portability (Gemini CLI expands env vars in settings.json)
+if script_path.startswith(home):
+    portable_script = '$HOME' + script_path[len(home):]
+else:
+    portable_script = script_path
+
 def make_hook_entry(event_name, script):
     return {
         "hooks": [
@@ -164,7 +171,7 @@ def make_hook_entry(event_name, script):
 hooks = settings.setdefault('hooks', {})
 
 for event in gemini_events:
-    entry = make_hook_entry(event, script_path)
+    entry = make_hook_entry(event, portable_script)
     if event in hooks:
         # Append to existing event hooks
         if isinstance(hooks[event], list):
