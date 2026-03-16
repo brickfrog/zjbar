@@ -27,7 +27,7 @@ layout {
     default_tab_template {
         children
         pane size=1 borderless=true {
-            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.26/zjbar.wasm"
+            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.27/zjbar.wasm"
         }
     }
 }
@@ -112,21 +112,26 @@ make uninstall-codex-hooks
 
 ### Gemini CLI
 
-```bash
-gemini extensions install https://github.com/imroc/zjbar
-```
-
-This uses Gemini CLI's native extension system and installs directly from GitHub. Hooks are loaded automatically.
-
-To update to the latest version:
+First, clone the repo (or download it):
 
 ```bash
-gemini extensions update zjbar
+git clone https://github.com/imroc/zjbar.git
+cd zjbar
 ```
 
-> Tip: Add `--auto-update` during install to enable automatic updates: `gemini extensions install https://github.com/imroc/zjbar --auto-update`
+Then install the hooks:
 
-To uninstall: `gemini extensions uninstall zjbar`.
+```bash
+make install-gemini-hooks
+```
+
+This copies the hook script to `~/.gemini/zjbar/` and registers the hooks in `~/.gemini/settings.json`. The repo can be safely deleted after installation.
+
+To uninstall:
+
+```bash
+make uninstall-gemini-hooks
+```
 
 zjbar tracks Gemini's full agent lifecycle: Thinking, Tool use, and Done states.
 

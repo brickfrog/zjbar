@@ -27,7 +27,7 @@ layout {
     default_tab_template {
         children
         pane size=1 borderless=true {
-            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.26/zjbar.wasm"
+            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.27/zjbar.wasm"
         }
     }
 }
@@ -112,21 +112,26 @@ make uninstall-codex-hooks
 
 ### Gemini CLI
 
-```bash
-gemini extensions install https://github.com/imroc/zjbar
-```
-
-使用 Gemini CLI 的原生扩展系统，直接从 GitHub 安装。hooks 会自动加载。
-
-更新到最新版本：
+首先，克隆仓库（或下载）：
 
 ```bash
-gemini extensions update zjbar
+git clone https://github.com/imroc/zjbar.git
+cd zjbar
 ```
 
-> 提示：安装时加 `--auto-update` 可启用自动更新：`gemini extensions install https://github.com/imroc/zjbar --auto-update`
+然后安装 hooks：
 
-卸载：`gemini extensions uninstall zjbar`。
+```bash
+make install-gemini-hooks
+```
+
+这会将 hook 脚本复制到 `~/.gemini/zjbar/`，并在 `~/.gemini/settings.json` 中注册 hooks。安装后仓库可以安全删除。
+
+卸载：
+
+```bash
+make uninstall-gemini-hooks
+```
 
 zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。
 
