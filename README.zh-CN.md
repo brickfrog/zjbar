@@ -27,7 +27,7 @@ layout {
     default_tab_template {
         children
         pane size=1 borderless=true {
-            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.27/zjbar.wasm"
+            plugin location="https://github.com/imroc/zjbar/releases/download/v1.1.28/zjbar.wasm"
         }
     }
 }
