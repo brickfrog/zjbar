@@ -1,72 +1,110 @@
 {
-  "description": "Forward Gemini CLI hook events to zjbar Zellij plugin via zellij pipe",
+  "description": "Forward Claude Code hook events to zjbar Zellij plugin via zellij pipe",
   "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "SessionStart"
-            }
-          }
-        ]
-      }
-    ],
-    "BeforeAgent": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "BeforeAgent"
-            }
-          }
-        ]
-      }
-    ],
-    "BeforeTool": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "BeforeTool"
-            }
-          }
-        ]
-      }
-    ],
-    "AfterTool": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "AfterTool"
-            }
-          }
-        ]
-      }
-    ],
-    "AfterAgent": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "AfterAgent"
-            }
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -76,11 +114,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" && exec \"${extensionPath}/scripts/zjbar-gemini-hook.sh\" || exit 0'",
-            "timeout": 5000,
-            "env": {
-              "ZJBAR_GEMINI_EVENT": "SessionEnd"
-            }
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/zjbar-hook.sh",
+            "timeout": 5,
+            "async": true
           }
         ]
       }

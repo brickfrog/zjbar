@@ -15,9 +15,11 @@ src/
 ├── event_handler.rs  # Maps hook events to Activity states (tool-agnostic)
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
 hooks/
-└── hooks.json                # Gemini CLI hook event definitions (6 events, for extension use)
+└── hooks.json                # Claude Code hook event definitions (default path for Claude Code plugin)
 claude-hooks/
-└── hooks.json                # Claude Code hook event definitions (10 events)
+└── hooks.json                # Claude Code hook event definitions (backup copy, same as hooks/hooks.json)
+gemini-hooks/
+└── hooks.json                # Gemini CLI hook event definitions (6 events, for future Gemini extension use)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
 ├── install-hooks.sh          # Claude Code hook installer (legacy, use plugin instead)
