@@ -16,8 +16,6 @@ src/
 └── tab_pane_map.rs   # Maps pane IDs to (tab_index, tab_name) pairs
 hooks/
 └── hooks.json                # Claude Code hook event definitions (default path for Claude Code plugin)
-claude-hooks/
-└── hooks.json                # Claude Code hook event definitions (backup copy, same as hooks/hooks.json)
 scripts/
 ├── zjbar-hook.sh             # Claude Code hook → zellij pipe bridge
 ├── install-hooks.sh          # Claude Code hook installer (legacy, use plugin instead)
