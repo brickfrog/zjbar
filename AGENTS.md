@@ -275,9 +275,8 @@ The workflow for every code change is:
 
 1. **Fix/implement** the change
 2. **Build & test** locally (tmux test for WASM rendering, deploy to OpenCode caches for OpenCode plugin)
-3. **Bump version** in all 6 files (see checklist below)
-4. **Build WASM** (`cargo build --release --target wasm32-wasip1`) to update `Cargo.lock`
-5. **Commit, push, tag, `make release`** — this creates the GitHub Release and publishes the npm package
+3. **Bump version**: `make bump V=x.y.z` — updates all 7 version files, builds WASM, commits, and tags
+4. **Publish**: `make release` — pushes main + tag, creates GitHub Release, publishes npm package
 6. **Update local caches** for OpenCode plugin so the user can verify immediately:
    ```bash
    cp opencode-plugin/dist/index.js ~/.config/opencode/node_modules/zjbar-opencode/dist/index.js
@@ -289,7 +288,9 @@ This fast iteration loop allows the user to test fixes within seconds of a relea
 
 ## Releasing a New Version
 
-When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the version in **all** of these places:
+`make bump V=x.y.z` automates the entire version bump process. It updates all version references, builds WASM (which updates `Cargo.lock`), commits, and tags — preventing any file from being missed.
+
+The files updated by `make bump`:
 
 1. **`Cargo.toml`** — `version = "x.y.z"`
 2. **`README.md`** — WASM download URL in the layout example (`releases/download/vX.Y.Z/zjbar.wasm`)
@@ -297,18 +298,16 @@ When creating a new release (e.g. bumping from `v1.0.4` to `v1.0.5`), update the
 4. **`.claude-plugin/marketplace.json`** — both `version` fields
 5. **`.claude-plugin/plugin.json`** — `version` field
 6. **`opencode-plugin/package.json`** — `version` field (must match the release version)
-7. **`Cargo.lock`** — auto-updated by `cargo build`, commit when `Cargo.toml` version changes
+7. **`Cargo.lock`** — auto-updated by `cargo build`
 
-Use `grep -r 'releases/download/v' .` to verify all WASM URLs are updated.
+Full release workflow:
 
-**Note:** `Cargo.lock` is auto-updated by `cargo build` when `Cargo.toml` version changes. Remember to `git add Cargo.lock` when committing the version bump.
+```bash
+# 1. Bump version (updates all files, builds, commits, tags)
+make bump V=x.y.z
 
-After updating all versions, commit, push, and complete the release:
+# 2. Publish (pushes main + tag, creates GitHub Release, publishes npm)
+make release
+```
 
-1. **Commit & push** the version bump.
-2. **Tag & release** (builds WASM, creates GitHub Release with changelog, publishes npm package):
-   ```bash
-   git tag vX.Y.Z
-   make release
-   ```
-   npm authentication is configured via `~/.npmrc` (`_authToken`).
+npm authentication is configured via `~/.npmrc` (`_authToken`).

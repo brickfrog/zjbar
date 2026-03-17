@@ -2,8 +2,9 @@ PLUGIN_DIR := $(HOME)/.config/zellij/plugins
 LAYOUT_DIR := $(HOME)/.config/zellij/layouts
 WASM       := target/wasm32-wasip1/release/zjbar.wasm
 TAG        := $(shell git describe --tags --exact-match 2>/dev/null)
+CUR_VER    := $(shell grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
 
-.PHONY: build install install-layouts install-codex-hooks uninstall-codex-hooks install-gemini-hooks uninstall-gemini-hooks uninstall clean release
+.PHONY: build install install-layouts install-codex-hooks uninstall-codex-hooks install-gemini-hooks uninstall-gemini-hooks uninstall clean bump release
 
 build:
 	cargo build --release
@@ -40,11 +41,43 @@ uninstall:
 clean:
 	cargo clean
 
+bump:
+	@if [ -z "$(V)" ]; then echo "Usage: make bump V=x.y.z"; exit 1; fi
+	@if [ "$(V)" = "$(CUR_VER)" ]; then echo "Error: version $(V) is the same as current"; exit 1; fi
+	@if ! git diff --quiet || ! git diff --cached --quiet; then \
+		echo "Error: working tree is dirty — commit or stash first"; exit 1; \
+	fi
+	@echo "Bumping $(CUR_VER) → $(V) ..."
+	@# 1. Cargo.toml
+	sed -i '' 's/^version = "$(CUR_VER)"/version = "$(V)"/' Cargo.toml
+	@# 2-3. README WASM download URLs
+	sed -i '' 's|releases/download/v$(CUR_VER)/zjbar.wasm|releases/download/v$(V)/zjbar.wasm|' README.md README.zh-CN.md
+	@# 4. .claude-plugin/marketplace.json (both version fields)
+	sed -i '' 's/"$(CUR_VER)"/"$(V)"/g' .claude-plugin/marketplace.json
+	@# 5. .claude-plugin/plugin.json
+	sed -i '' 's/"$(CUR_VER)"/"$(V)"/' .claude-plugin/plugin.json
+	@# 6. opencode-plugin/package.json
+	sed -i '' 's/"version": "$(CUR_VER)"/"version": "$(V)"/' opencode-plugin/package.json
+	@# 7. Build to update Cargo.lock
+	cargo build --release
+	@# Verify no stale references remain
+	@if grep -rq 'releases/download/v$(CUR_VER)' README.md README.zh-CN.md; then \
+		echo "Error: stale version $(CUR_VER) still found in README"; exit 1; \
+	fi
+	@# Commit and tag
+	git add Cargo.toml Cargo.lock README.md README.zh-CN.md \
+		.claude-plugin/marketplace.json .claude-plugin/plugin.json \
+		opencode-plugin/package.json
+	git commit -m "chore: bump version to v$(V)"
+	git tag v$(V)
+	@echo "Done. Run 'make release' to publish."
+
 release: build
 	@if [ -z "$(TAG)" ]; then \
 		echo "Error: HEAD has no tag. Tag first with: git tag vX.Y.Z"; \
 		exit 1; \
 	fi
+	git push origin main
 	git push origin $(TAG)
 	@PREV=$$(git describe --tags --abbrev=0 $(TAG)^ 2>/dev/null); \
 	if [ -n "$$PREV" ]; then \
