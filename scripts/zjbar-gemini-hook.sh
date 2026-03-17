@@ -134,29 +134,6 @@ for EVT in $NOTIFY_EVENTS; do
   [ "$ZJBAR_EVENT" = "$EVT" ] && { IS_NOTIFY_EVENT=true; break; }
 done
 
-# -- Stop debounce --
-STOP_DEBOUNCE_SECS=3
-DEBOUNCE_PID_FILE="/tmp/zjbar-stop-debounce-${ZELLIJ_PANE_ID}.pid"
-
-cancel_stop_debounce() {
-  if [ -f "$DEBOUNCE_PID_FILE" ]; then
-    local old_pid
-    old_pid=$(cat "$DEBOUNCE_PID_FILE" 2>/dev/null)
-    if [ -n "$old_pid" ]; then
-      kill "$old_pid" 2>/dev/null
-      wait "$old_pid" 2>/dev/null
-    fi
-    rm -f "$DEBOUNCE_PID_FILE"
-  fi
-}
-
-# Activity events cancel any pending Stop notification
-case "$ZJBAR_EVENT" in
-UserPromptSubmit|PreToolUse|PostToolUse)
-  cancel_stop_debounce
-  ;;
-esac
-
 # Resolve script directory for notification icon
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -d "${SCRIPT_DIR}/assets" ]; then
@@ -166,106 +143,76 @@ else
 fi
 
 if [ "$IS_NOTIFY_EVENT" = true ] && [ "$ZJBAR_EVENT" = "Stop" ]; then
-  cancel_stop_debounce
-
-  # Extract summary NOW (before entering subshell) since $PROMPT_RESPONSE
-  # is available in the current process from the AfterAgent hook input.
+  # Extract summary from AfterAgent's prompt_response
   SUMMARY=$(extract_summary "$PROMPT_RESPONSE")
 
-  # Write summary to a temp file for the debounce subshell to read,
-  # since variables don't survive into background subshells reliably
-  # when they contain special characters.
-  SUMMARY_FILE="/tmp/zjbar-summary-${ZELLIJ_PANE_ID}"
-  echo "$SUMMARY" > "$SUMMARY_FILE"
+  TITLE="✅ Gemini"
+  if [ -n "$SUMMARY" ]; then
+    MESSAGE="$SUMMARY"
+  else
+    MESSAGE="Task completed"
+  fi
 
-  (
-    sleep "$STOP_DEBOUNCE_SECS"
-    rm -f "$DEBOUNCE_PID_FILE"
-
-    # Read summary from temp file
-    SUMMARY=""
-    if [ -f "$SUMMARY_FILE" ]; then
-      SUMMARY=$(cat "$SUMMARY_FILE" 2>/dev/null)
-      rm -f "$SUMMARY_FILE"
-    fi
-
-    TITLE="✅ Gemini"
-    if [ -n "$SUMMARY" ]; then
-      MESSAGE="$SUMMARY"
-    else
-      MESSAGE="Task completed"
-    fi
-
-    SHOULD_NOTIFY=false
-    case "$NOTIFY_MODE" in
-    always) SHOULD_NOTIFY=true ;;
-    unfocused)
-      TERM_FOCUSED=false
-      case "$(uname)" in
-      Darwin)
-        EXPECTED="${TERM_PROGRAM:-}"
-        case "$EXPECTED" in
-        Apple_Terminal) EXPECTED="Terminal" ;;
-        iTerm.app) EXPECTED="iTerm2" ;;
-        esac
-        FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-        [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-        ;;
-      Linux)
-        if command -v xdotool >/dev/null 2>&1; then
-          ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-          if [ -n "$ACTIVE_PID" ]; then
-            PID=$$
-            while [ "$PID" -gt 1 ] 2>/dev/null; do
-              [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
-              PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-            done
-          fi
-        fi
-        ;;
+  SHOULD_NOTIFY=false
+  case "$NOTIFY_MODE" in
+  always) SHOULD_NOTIFY=true ;;
+  unfocused)
+    TERM_FOCUSED=false
+    case "$(uname)" in
+    Darwin)
+      EXPECTED="${TERM_PROGRAM:-}"
+      case "$EXPECTED" in
+      Apple_Terminal) EXPECTED="Terminal" ;;
+      iTerm.app) EXPECTED="iTerm2" ;;
       esac
-      [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
+      FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
+      [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
+      ;;
+    Linux)
+      if command -v xdotool >/dev/null 2>&1; then
+        ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
+        if [ -n "$ACTIVE_PID" ]; then
+          PID=$$
+          while [ "$PID" -gt 1 ] 2>/dev/null; do
+            [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
+            PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
+          done
+        fi
+      fi
       ;;
     esac
+    [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
+    ;;
+  esac
 
-    if [ "$SHOULD_NOTIFY" = true ]; then
-      LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
-      NOW=$(date +%s)
-      LAST=0
-      [ -f "$LOCK" ] && LAST=$(cat "$LOCK" 2>/dev/null)
-      if [ $((NOW - LAST)) -ge 10 ]; then
-        echo "$NOW" >"$LOCK"
+  if [ "$SHOULD_NOTIFY" = true ]; then
+    ZELLIJ_BIN=$(command -v zellij)
+    FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
 
-        ZELLIJ_BIN=$(command -v zellij)
-        FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-        case "$(uname)" in
-        Darwin)
-          [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="${ICON_DIR}/gemini-logo.png"
-          ICON_FLAG=()
-          [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-          if command -v terminal-notifier >/dev/null 2>&1; then
-            terminal-notifier \
-              "${ICON_FLAG[@]}" \
-              -group "zjbar-${ZELLIJ_PANE_ID}" \
-              -title "$TITLE" \
-              -message "$MESSAGE" \
-              -execute "$FOCUS_CMD" &
-          else
-            osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-          fi
-          ;;
-        Linux)
-          if command -v notify-send >/dev/null 2>&1; then
-            notify-send "$TITLE" "$MESSAGE" &
-          fi
-          ;;
-        esac
+    case "$(uname)" in
+    Darwin)
+      [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
+      ICON_PATH="${ICON_DIR}/gemini-logo.png"
+      ICON_FLAG=()
+      [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
+      if command -v terminal-notifier >/dev/null 2>&1; then
+        terminal-notifier \
+          "${ICON_FLAG[@]}" \
+          -group "zjbar-${ZELLIJ_PANE_ID}" \
+          -title "$TITLE" \
+          -message "$MESSAGE" \
+          -execute "$FOCUS_CMD" &
+      else
+        osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
       fi
-    fi
-  ) &
-  echo $! >"$DEBOUNCE_PID_FILE"
+      ;;
+    Linux)
+      if command -v notify-send >/dev/null 2>&1; then
+        notify-send "$TITLE" "$MESSAGE" &
+      fi
+      ;;
+    esac
+  fi
 fi
 
 # Send to zjbar plugin (fire-and-forget)

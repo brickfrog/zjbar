@@ -201,41 +201,6 @@ for EVT in $NOTIFY_EVENTS; do
   }
 done
 
-# -- Stop debounce --
-# Claude Code and CodeBuddy may fire multiple Stop-like events in quick
-# succession (e.g. Stop + Notification/idle_prompt). To avoid duplicate
-# desktop notifications:
-#
-# 1. On Stop: cancel any pending debounce, then schedule a new
-#    notification to fire after STOP_DEBOUNCE_SECS seconds.
-# 2. On activity events (UserPromptSubmit, PreToolUse): cancel the pending
-#    debounce — the session is still active, not truly done.
-#
-# Implementation: each pane gets a debounce PID file at
-# /tmp/zjbar-stop-debounce-<PANE_ID>.pid. The debounce is a background
-# subshell that sleeps, then sends the notification.
-STOP_DEBOUNCE_SECS=3
-DEBOUNCE_PID_FILE="/tmp/zjbar-stop-debounce-${ZELLIJ_PANE_ID}.pid"
-
-cancel_stop_debounce() {
-  if [ -f "$DEBOUNCE_PID_FILE" ]; then
-    local old_pid
-    old_pid=$(cat "$DEBOUNCE_PID_FILE" 2>/dev/null)
-    if [ -n "$old_pid" ]; then
-      kill "$old_pid" 2>/dev/null
-      wait "$old_pid" 2>/dev/null
-    fi
-    rm -f "$DEBOUNCE_PID_FILE"
-  fi
-}
-
-# Activity events cancel any pending Stop notification
-case "$HOOK_EVENT" in
-UserPromptSubmit | PreToolUse | PostToolUse | PostToolUseFailure | PermissionRequest)
-  cancel_stop_debounce
-  ;;
-esac
-
 if [ "$IS_NOTIFY_EVENT" = true ]; then
   # Bell for PermissionRequest
   [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' >/dev/tty 2>/dev/null || true
@@ -248,213 +213,112 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ICON_FILE="codebuddy-logo.png"
   fi
 
-  # For Stop events, use debounced notification
-  if [ "$HOOK_EVENT" = "Stop" ]; then
-    # Cancel any previous pending Stop notification
-    cancel_stop_debounce
+  SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
 
-    # Schedule debounced notification in background
-    (
-      sleep "$STOP_DEBOUNCE_SECS"
-      rm -f "$DEBOUNCE_PID_FILE"
-
-      # Extract summary from transcript (if available)
-      SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
-
-      # Build notification title and message
-      TITLE="✅ $APP_NAME"
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Task completed"
-      fi
-
-      # Check notification mode
-      SHOULD_NOTIFY=false
-      case "$NOTIFY_MODE" in
-      always) SHOULD_NOTIFY=true ;;
-      unfocused)
-        TERM_FOCUSED=false
-        case "$(uname)" in
-        Darwin)
-          EXPECTED="${TERM_PROGRAM:-}"
-          case "$EXPECTED" in
-          Apple_Terminal) EXPECTED="Terminal" ;;
-          iTerm.app) EXPECTED="iTerm2" ;;
-          esac
-          FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-          [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-          ;;
-        Linux)
-          if command -v xdotool >/dev/null 2>&1; then
-            ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-            if [ -n "$ACTIVE_PID" ]; then
-              PID=$$
-              while [ "$PID" -gt 1 ] 2>/dev/null; do
-                [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
-                PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-              done
-            fi
-          fi
-          ;;
-        esac
-        [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
-        ;;
-      esac
-
-      if [ "$SHOULD_NOTIFY" = true ]; then
-        # Rate-limit: one notification per pane per 10 seconds
-        LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
-        NOW=$(date +%s)
-        LAST=0
-        [ -f "$LOCK" ] && LAST=$(cat "$LOCK" 2>/dev/null)
-        if [ $((NOW - LAST)) -ge 10 ]; then
-          echo "$NOW" >"$LOCK"
-
-          ZELLIJ_BIN=$(command -v zellij)
-          FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-          case "$(uname)" in
-          Darwin)
-            [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-            ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
-            ICON_FLAG=()
-            [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-            if command -v terminal-notifier >/dev/null 2>&1; then
-              terminal-notifier \
-                "${ICON_FLAG[@]}" \
-                -group "zjbar-${ZELLIJ_PANE_ID}" \
-                -title "$TITLE" \
-                -message "$MESSAGE" \
-                -execute "$FOCUS_CMD" &
-            else
-              osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-            fi
-            ;;
-          Linux)
-            if command -v notify-send >/dev/null 2>&1; then
-              notify-send "$TITLE" "$MESSAGE" &
-            fi
-            ;;
-          esac
-        fi
-      fi
-    ) &
-    echo $! >"$DEBOUNCE_PID_FILE"
-
-  else
-    # Non-Stop events: send notification immediately (PermissionRequest, Notification, etc.)
-    SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
-
-    # Build notification title and message per event type
-    case "$HOOK_EVENT" in
-    PermissionRequest)
-      TOOL_SUFFIX=""
-      [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
-      TITLE="⚠ $APP_NAME"
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      else
-        MESSAGE="Permission requested${TOOL_SUFFIX}"
-      fi
-      ;;
-    Notification)
-      if [ -n "$NOTIF_TITLE" ]; then
-        TITLE="$NOTIF_TITLE"
-      else
-        TITLE="$APP_NAME"
-      fi
-      if [ -n "$SUMMARY" ]; then
-        MESSAGE="$SUMMARY"
-      elif [ -n "$NOTIF_MESSAGE" ]; then
-        MESSAGE="$NOTIF_MESSAGE"
-      else
-        MESSAGE="Notification received"
-      fi
-      ;;
-    *)
-      TITLE="$APP_NAME"
-      MESSAGE="Event: $HOOK_EVENT"
-      ;;
-    esac
-
-    # For "unfocused" mode, check if the terminal app is frontmost
-    SHOULD_NOTIFY=false
-    case "$NOTIFY_MODE" in
-    always) SHOULD_NOTIFY=true ;;
-    unfocused)
-      TERM_FOCUSED=false
-      case "$(uname)" in
-      Darwin)
-        # Map TERM_PROGRAM to macOS process name
-        EXPECTED="${TERM_PROGRAM:-}"
-        case "$EXPECTED" in
-        Apple_Terminal) EXPECTED="Terminal" ;;
-        iTerm.app) EXPECTED="iTerm2" ;;
-        esac
-        FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-        [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-        ;;
-      Linux)
-        # X11: check if focused window belongs to our terminal
-        if command -v xdotool >/dev/null 2>&1; then
-          ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-          if [ -n "$ACTIVE_PID" ]; then
-            PID=$$
-            while [ "$PID" -gt 1 ] 2>/dev/null; do
-              [ "$PID" = "$ACTIVE_PID" ] && {
-                TERM_FOCUSED=true
-                break
-              }
-              PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-            done
-          fi
-        fi
-        # Wayland: no standard way to check; fall through to not-focused
-        ;;
-      esac
-      [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
-      ;;
-    esac
-
-    if [ "$SHOULD_NOTIFY" = true ]; then
-      # Rate-limit: one notification per pane per 10 seconds
-      LOCK="/tmp/zjbar-notify-${ZELLIJ_PANE_ID}"
-      NOW=$(date +%s)
-      LAST=0
-      [ -f "$LOCK" ] && LAST=$(cat "$LOCK" 2>/dev/null)
-      if [ $((NOW - LAST)) -ge 10 ]; then
-        echo "$NOW" >"$LOCK"
-
-        # Click callback: activate terminal + focus the pane
-        ZELLIJ_BIN=$(command -v zellij)
-        FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-        case "$(uname)" in
-        Darwin)
-          [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-          ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
-          ICON_FLAG=()
-          [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-          if command -v terminal-notifier >/dev/null 2>&1; then
-            terminal-notifier \
-              "${ICON_FLAG[@]}" \
-              -group "zjbar-${ZELLIJ_PANE_ID}" \
-              -title "$TITLE" \
-              -message "$MESSAGE" \
-              -execute "$FOCUS_CMD" &
-          else
-            osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-          fi
-          ;;
-        Linux)
-          if command -v notify-send >/dev/null 2>&1; then
-            notify-send "$TITLE" "$MESSAGE" &
-          fi
-          ;;
-        esac
-      fi
+  # Build notification title and message per event type
+  case "$HOOK_EVENT" in
+  Stop)
+    TITLE="✅ $APP_NAME"
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Task completed"
     fi
+    ;;
+  PermissionRequest)
+    TOOL_SUFFIX=""
+    [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
+    TITLE="⚠ $APP_NAME"
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    else
+      MESSAGE="Permission requested${TOOL_SUFFIX}"
+    fi
+    ;;
+  Notification)
+    if [ -n "$NOTIF_TITLE" ]; then
+      TITLE="$NOTIF_TITLE"
+    else
+      TITLE="$APP_NAME"
+    fi
+    if [ -n "$SUMMARY" ]; then
+      MESSAGE="$SUMMARY"
+    elif [ -n "$NOTIF_MESSAGE" ]; then
+      MESSAGE="$NOTIF_MESSAGE"
+    else
+      MESSAGE="Notification received"
+    fi
+    ;;
+  *)
+    TITLE="$APP_NAME"
+    MESSAGE="Event: $HOOK_EVENT"
+    ;;
+  esac
+
+  # For "unfocused" mode, check if the terminal app is frontmost
+  SHOULD_NOTIFY=false
+  case "$NOTIFY_MODE" in
+  always) SHOULD_NOTIFY=true ;;
+  unfocused)
+    TERM_FOCUSED=false
+    case "$(uname)" in
+    Darwin)
+      EXPECTED="${TERM_PROGRAM:-}"
+      case "$EXPECTED" in
+      Apple_Terminal) EXPECTED="Terminal" ;;
+      iTerm.app) EXPECTED="iTerm2" ;;
+      esac
+      FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
+      [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
+      ;;
+    Linux)
+      if command -v xdotool >/dev/null 2>&1; then
+        ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
+        if [ -n "$ACTIVE_PID" ]; then
+          PID=$$
+          while [ "$PID" -gt 1 ] 2>/dev/null; do
+            [ "$PID" = "$ACTIVE_PID" ] && {
+              TERM_FOCUSED=true
+              break
+            }
+            PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
+          done
+        fi
+      fi
+      ;;
+    esac
+    [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
+    ;;
+  esac
+
+  if [ "$SHOULD_NOTIFY" = true ]; then
+    # Click callback: activate terminal + focus the pane
+    ZELLIJ_BIN=$(command -v zellij)
+    FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
+
+    case "$(uname)" in
+    Darwin)
+      [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
+      ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
+      ICON_FLAG=()
+      [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
+      if command -v terminal-notifier >/dev/null 2>&1; then
+        terminal-notifier \
+          "${ICON_FLAG[@]}" \
+          -group "zjbar-${ZELLIJ_PANE_ID}" \
+          -title "$TITLE" \
+          -message "$MESSAGE" \
+          -execute "$FOCUS_CMD" &
+      else
+        osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
+      fi
+      ;;
+    Linux)
+      if command -v notify-send >/dev/null 2>&1; then
+        notify-send "$TITLE" "$MESSAGE" &
+      fi
+      ;;
+    esac
   fi
 fi
 

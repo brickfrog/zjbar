@@ -31,8 +31,6 @@ interface ZjbarSettings {
 }
 
 const DEFAULT_NOTIFY_EVENTS = ["PermissionRequest", "Notification", "Stop"];
-const NOTIFY_RATE_LIMIT_SECS = 10;
-const lastNotifyTime: Record<string, number> = {};
 
 function loadSettings(): ZjbarSettings {
   const settingsPath = join(
@@ -61,12 +59,6 @@ function shouldNotify(
 
   const events = settings.notify_events ?? DEFAULT_NOTIFY_EVENTS;
   if (!events.includes(hookEvent)) return false;
-
-  // Rate limit per pane
-  const now = Math.floor(Date.now() / 1000);
-  const key = `pane-${paneId}`;
-  if (now - (lastNotifyTime[key] ?? 0) < NOTIFY_RATE_LIMIT_SECS) return false;
-  lastNotifyTime[key] = now;
 
   if (mode === "unfocused" && platform() === "darwin" && termProgram) {
     try {
@@ -260,14 +252,6 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   const termProgram = process.env.TERM_PROGRAM || null;
   let activeSessionId: string | null = null;
 
-  // Debounced Stop notification: OpenCode cycles through busy→idle
-  // multiple times during multi-step tasks (e.g. tool calls). We only
-  // want to send a desktop notification when the session is truly done,
-  // not on intermediate idle states. Wait STOP_DEBOUNCE_MS after the
-  // last session.idle before sending the notification.
-  const STOP_DEBOUNCE_MS = 2000;
-  let stopDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   // Resolve zellij binary path once at startup
   let zellijBin = "zellij";
   try {
@@ -333,36 +317,24 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
         case "session.status": {
           const status = ev.properties?.status?.type;
           if (status === "busy") {
-            // Cancel any pending Stop notification — session is active again
-            if (stopDebounceTimer) {
-              clearTimeout(stopDebounceTimer);
-              stopDebounceTimer = null;
-            }
             // Send UserPromptSubmit to trigger Thinking (●) icon
             sendToZjbar("UserPromptSubmit");
           }
           break;
         }
         case "session.idle": {
-          // Always send Stop to zjbar plugin to update tab state (✅ Done),
-          // but skip automatic desktop notification here
-          sendToZjbar("Stop", null, null, /* skipDesktop */ true);
-          // Debounce: schedule desktop notification after a delay.
-          // If session becomes busy again before the timer fires,
-          // the timer is cancelled in the session.status(busy) handler.
-          if (stopDebounceTimer) clearTimeout(stopDebounceTimer);
+          // Send Stop with desktop notification immediately
           const sid = ev.properties?.sessionID || activeSessionId;
-          stopDebounceTimer = setTimeout(async () => {
-            stopDebounceTimer = null;
-            if (sid && client) {
-              try {
-                const summary = await getSessionSummary(client, sid);
-                if (summary && shouldNotify("Stop", paneId!, termProgram)) {
-                  sendNotification("Stop", paneId!, zellijSession!, termProgram, summary);
-                }
-              } catch {}
+          if (sid && client) {
+            try {
+              const summary = await getSessionSummary(client, sid);
+              sendToZjbar("Stop", null, summary);
+            } catch {
+              sendToZjbar("Stop");
             }
-          }, STOP_DEBOUNCE_MS);
+          } else {
+            sendToZjbar("Stop");
+          }
           break;
         }
         case "session.deleted":
