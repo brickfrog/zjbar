@@ -145,71 +145,79 @@ pub struct BarConfig {
     pub separator_tab: String,
 }
 
+/// Macro to reduce boilerplate in `from_kdl`. Each arm maps a field name and KDL
+/// config key to a default color constant, calling `get_color` once per field.
+macro_rules! color_fields {
+    ($config:expr, $( $field:ident : $key:literal => $default:expr ),* $(,)?) => {
+        Self {
+            $( $field: get_color($config, $key, $default), )*
+            tab_fullscreen_indicator: get_str($config, "tab_fullscreen_indicator", " 󰊓").to_string(),
+            tab_floating_indicator: get_str($config, "tab_floating_indicator", " 󰹙").to_string(),
+            separator_left: get_str($config, "separator_left", "\u{e0b0}").to_string(),
+            separator_right: get_str($config, "separator_right", "\u{e0b2}").to_string(),
+            separator_tab: get_str($config, "separator_tab", "\u{e0b1}").to_string(),
+        }
+    };
+}
+
 impl BarConfig {
     pub fn from_kdl(config: &BTreeMap<String, String>) -> Self {
-        Self {
-            bar_bg: get_color(config, "bar_bg", D_BAR_BG),
+        color_fields!(config,
+            bar_bg:                  "bar_bg"                  => D_BAR_BG,
 
-            session_bg: get_color(config, "session_bg", D_SESSION_BG),
-            session_fg: get_color(config, "session_fg", D_SESSION_FG),
+            session_bg:              "session_bg"              => D_SESSION_BG,
+            session_fg:              "session_fg"              => D_SESSION_FG,
 
-            tab_active_bg: get_color(config, "tab_active_bg", D_TAB_ACTIVE_BG),
-            tab_active_fg: get_color(config, "tab_active_fg", D_TAB_ACTIVE_FG),
-            tab_active_index_bg: get_color(config, "tab_active_index_bg", D_TAB_ACTIVE_INDEX_BG),
-            tab_active_index_fg: get_color(config, "tab_active_index_fg", D_TAB_ACTIVE_INDEX_FG),
-            tab_inactive_bg: get_color(config, "tab_inactive_bg", D_TAB_INACTIVE_BG),
-            tab_inactive_fg: get_color(config, "tab_inactive_fg", D_TAB_INACTIVE_FG),
-            tab_separator_fg: get_color(config, "tab_separator_fg", D_TAB_SEPARATOR),
+            tab_active_bg:           "tab_active_bg"           => D_TAB_ACTIVE_BG,
+            tab_active_fg:           "tab_active_fg"           => D_TAB_ACTIVE_FG,
+            tab_active_index_bg:     "tab_active_index_bg"     => D_TAB_ACTIVE_INDEX_BG,
+            tab_active_index_fg:     "tab_active_index_fg"     => D_TAB_ACTIVE_INDEX_FG,
+            tab_inactive_bg:         "tab_inactive_bg"         => D_TAB_INACTIVE_BG,
+            tab_inactive_fg:         "tab_inactive_fg"         => D_TAB_INACTIVE_FG,
+            tab_separator_fg:        "tab_separator_fg"        => D_TAB_SEPARATOR,
 
-            flash_bg: get_color(config, "flash_bg", D_FLASH_BG),
-            flash_fg: get_color(config, "flash_fg", D_FLASH_FG),
+            flash_bg:                "flash_bg"                => D_FLASH_BG,
+            flash_fg:                "flash_fg"                => D_FLASH_FG,
 
-            mode_normal_bg: get_color(config, "mode_normal_bg", D_MODE_NORMAL_BG),
-            mode_normal_fg: get_color(config, "mode_normal_fg", D_MODE_FG),
-            mode_locked_bg: get_color(config, "mode_locked_bg", D_MODE_LOCKED_BG),
-            mode_locked_fg: get_color(config, "mode_locked_fg", D_MODE_FG),
-            mode_pane_bg: get_color(config, "mode_pane_bg", D_MODE_PANE_BG),
-            mode_pane_fg: get_color(config, "mode_pane_fg", D_MODE_FG),
-            mode_tab_bg: get_color(config, "mode_tab_bg", D_MODE_TAB_BG),
-            mode_tab_fg: get_color(config, "mode_tab_fg", D_MODE_FG),
-            mode_resize_bg: get_color(config, "mode_resize_bg", D_MODE_RESIZE_BG),
-            mode_resize_fg: get_color(config, "mode_resize_fg", D_MODE_FG),
-            mode_move_bg: get_color(config, "mode_move_bg", D_MODE_MOVE_BG),
-            mode_move_fg: get_color(config, "mode_move_fg", D_MODE_FG),
-            mode_scroll_bg: get_color(config, "mode_scroll_bg", D_MODE_SCROLL_BG),
-            mode_scroll_fg: get_color(config, "mode_scroll_fg", D_MODE_FG),
-            mode_search_bg: get_color(config, "mode_search_bg", D_MODE_SEARCH_BG),
-            mode_search_fg: get_color(config, "mode_search_fg", D_MODE_FG),
-            mode_entersearch_bg: get_color(config, "mode_entersearch_bg", D_MODE_ENTERSEARCH_BG),
-            mode_entersearch_fg: get_color(config, "mode_entersearch_fg", D_MODE_FG),
-            mode_session_bg: get_color(config, "mode_session_bg", D_MODE_SESSION_BG),
-            mode_session_fg: get_color(config, "mode_session_fg", D_MODE_FG),
-            mode_prompt_bg: get_color(config, "mode_prompt_bg", D_MODE_PROMPT_BG),
-            mode_prompt_fg: get_color(config, "mode_prompt_fg", D_MODE_FG),
-            mode_renametab_bg: get_color(config, "mode_renametab_bg", D_MODE_RENAMETAB_BG),
-            mode_renametab_fg: get_color(config, "mode_renametab_fg", D_MODE_FG),
-            mode_renamepane_bg: get_color(config, "mode_renamepane_bg", D_MODE_RENAMEPANE_BG),
-            mode_renamepane_fg: get_color(config, "mode_renamepane_fg", D_MODE_FG),
-            mode_tmux_bg: get_color(config, "mode_tmux_bg", D_MODE_TMUX_BG),
-            mode_tmux_fg: get_color(config, "mode_tmux_fg", D_MODE_FG),
+            mode_normal_bg:          "mode_normal_bg"          => D_MODE_NORMAL_BG,
+            mode_normal_fg:          "mode_normal_fg"          => D_MODE_FG,
+            mode_locked_bg:          "mode_locked_bg"          => D_MODE_LOCKED_BG,
+            mode_locked_fg:          "mode_locked_fg"          => D_MODE_FG,
+            mode_pane_bg:            "mode_pane_bg"            => D_MODE_PANE_BG,
+            mode_pane_fg:            "mode_pane_fg"            => D_MODE_FG,
+            mode_tab_bg:             "mode_tab_bg"             => D_MODE_TAB_BG,
+            mode_tab_fg:             "mode_tab_fg"             => D_MODE_FG,
+            mode_resize_bg:          "mode_resize_bg"          => D_MODE_RESIZE_BG,
+            mode_resize_fg:          "mode_resize_fg"          => D_MODE_FG,
+            mode_move_bg:            "mode_move_bg"            => D_MODE_MOVE_BG,
+            mode_move_fg:            "mode_move_fg"            => D_MODE_FG,
+            mode_scroll_bg:          "mode_scroll_bg"          => D_MODE_SCROLL_BG,
+            mode_scroll_fg:          "mode_scroll_fg"          => D_MODE_FG,
+            mode_search_bg:          "mode_search_bg"          => D_MODE_SEARCH_BG,
+            mode_search_fg:          "mode_search_fg"          => D_MODE_FG,
+            mode_entersearch_bg:     "mode_entersearch_bg"     => D_MODE_ENTERSEARCH_BG,
+            mode_entersearch_fg:     "mode_entersearch_fg"     => D_MODE_FG,
+            mode_session_bg:         "mode_session_bg"         => D_MODE_SESSION_BG,
+            mode_session_fg:         "mode_session_fg"         => D_MODE_FG,
+            mode_prompt_bg:          "mode_prompt_bg"          => D_MODE_PROMPT_BG,
+            mode_prompt_fg:          "mode_prompt_fg"          => D_MODE_FG,
+            mode_renametab_bg:       "mode_renametab_bg"       => D_MODE_RENAMETAB_BG,
+            mode_renametab_fg:       "mode_renametab_fg"       => D_MODE_FG,
+            mode_renamepane_bg:      "mode_renamepane_bg"      => D_MODE_RENAMEPANE_BG,
+            mode_renamepane_fg:      "mode_renamepane_fg"      => D_MODE_FG,
+            mode_tmux_bg:            "mode_tmux_bg"            => D_MODE_TMUX_BG,
+            mode_tmux_fg:            "mode_tmux_fg"            => D_MODE_FG,
 
-            activity_init_color: get_color(config, "activity_init_color", D_ACTIVITY_INIT),
-            activity_thinking_color: get_color(config, "activity_thinking_color", D_ACTIVITY_THINKING),
-            activity_tool_color: get_color(config, "activity_tool_color", D_ACTIVITY_TOOL),
-            activity_waiting_color: get_color(config, "activity_waiting_color", D_ACTIVITY_WAITING),
-            activity_permission_color: get_color(config, "activity_permission_color", D_ACTIVITY_PERMISSION),
-            activity_done_color: get_color(config, "activity_done_color", D_ACTIVITY_DONE),
-            activity_prompt_color: get_color(config, "activity_prompt_color", D_ACTIVITY_PROMPT),
+            activity_init_color:     "activity_init_color"     => D_ACTIVITY_INIT,
+            activity_thinking_color: "activity_thinking_color" => D_ACTIVITY_THINKING,
+            activity_tool_color:     "activity_tool_color"     => D_ACTIVITY_TOOL,
+            activity_waiting_color:  "activity_waiting_color"  => D_ACTIVITY_WAITING,
+            activity_permission_color: "activity_permission_color" => D_ACTIVITY_PERMISSION,
+            activity_done_color:     "activity_done_color"     => D_ACTIVITY_DONE,
+            activity_prompt_color:   "activity_prompt_color"   => D_ACTIVITY_PROMPT,
 
-            elapsed_fg: get_color(config, "elapsed_fg", D_ELAPSED_FG),
-
-            tab_fullscreen_indicator: get_str(config, "tab_fullscreen_indicator", " 󰊓").to_string(),
-            tab_floating_indicator: get_str(config, "tab_floating_indicator", " 󰹙").to_string(),
-
-            separator_left: get_str(config, "separator_left", "\u{e0b0}").to_string(),
-            separator_right: get_str(config, "separator_right", "\u{e0b2}").to_string(),
-            separator_tab: get_str(config, "separator_tab", "\u{e0b1}").to_string(),
-        }
+            elapsed_fg:              "elapsed_fg"              => D_ELAPSED_FG,
+        )
     }
 
     /// Get mode background and foreground colors for the given input mode.

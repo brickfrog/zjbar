@@ -76,9 +76,30 @@ fn display_width(s: &str) -> usize {
     s.chars().map(char_width).sum()
 }
 
+/// Number of decimal digits in a positive integer (e.g. 1→1, 10→2, 100→3).
+fn digit_count(n: usize) -> usize {
+    if n == 0 { return 1; }
+    let mut d = 0;
+    let mut v = n;
+    while v > 0 {
+        d += 1;
+        v /= 10;
+    }
+    d
+}
+
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const ELAPSED_THRESHOLD: u64 = 30;
+
+/// Maximum display width for a tab name before truncation.
+const MAX_TAB_NAME_WIDTH: usize = 20;
+/// Minimum columns required to start rendering a new tab.
+const MIN_TAB_COLS: usize = 8;
+/// Minimum remaining columns to render the next settings menu item.
+const MIN_MENU_ITEM_COLS: usize = 4;
+/// Minimum remaining columns to render the close button.
+const MIN_CLOSE_BTN_COLS: usize = 3;
 
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
@@ -243,6 +264,58 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     let _ = std::io::stdout().flush();
 }
 
+/// Colors for settings menu items.
+const MENU_ACTIVE_SYM: Color = (80, 200, 120);
+const MENU_INACTIVE_SYM: Color = (100, 100, 100);
+const MENU_ACTIVE_LABEL: Color = (192, 202, 245);
+const MENU_DIM_LABEL: Color = (100, 100, 100);
+const MENU_CLOSE_COLOR: Color = (255, 60, 60);
+
+/// Render a single toggle menu item: "● Label" or "○ Label".
+/// Returns false if there was not enough space.
+fn render_menu_item(
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    bar_bg: Color,
+    is_on: bool,
+    label: &str,
+    is_first: bool,
+    regions: &mut Vec<MenuClickRegion>,
+    action: MenuAction,
+) -> bool {
+    // Spacing between items (skip for the first item)
+    if !is_first {
+        if *col + MIN_MENU_ITEM_COLS >= cols {
+            return false;
+        }
+        write_bg!(buf, bar_bg);
+        let _ = write!(buf, "  ");
+        *col += 2;
+    }
+
+    let (sym, sym_c, label_c) = if is_on {
+        ("●", MENU_ACTIVE_SYM, MENU_ACTIVE_LABEL)
+    } else {
+        ("○", MENU_INACTIVE_SYM, MENU_DIM_LABEL)
+    };
+
+    let start = *col;
+    write_bg!(buf, bar_bg);
+    write_fg!(buf, sym_c);
+    let _ = write!(buf, "{sym} ");
+    write_fg!(buf, label_c);
+    let _ = write!(buf, "{label}");
+    *col += 2 + label.len();
+
+    regions.push(MenuClickRegion {
+        start_col: start,
+        end_col: *col,
+        action,
+    });
+    true
+}
+
 fn render_settings_menu(
     state: &mut State,
     buf: &mut String,
@@ -254,115 +327,56 @@ fn render_settings_menu(
     let _ = write!(buf, " ");
     *col += 1;
 
-    // Colors as tuples (zero-allocation)
-    let active_sym_c: Color = (80, 200, 120);
-    let inactive_sym_c: Color = (100, 100, 100);
-    let active_label_c: Color = (192, 202, 245);
-    let dim_label_c: Color = (100, 100, 100);
+    let bar_bg = state.config.bar_bg;
 
     // --- Flash ---
-    {
-        let is_on = state.settings.flash != crate::state::FlashMode::Off;
-        let (sym, sym_c, label_c) = if is_on {
-            ("●", &active_sym_c, &active_label_c)
-        } else {
-            ("○", &inactive_sym_c, &dim_label_c)
-        };
-        let label = format!("Flash: {}", state.settings.flash.label());
-        let start = *col;
-        write_bg!(buf, state.config.bar_bg);
-        write_fg!(buf, *sym_c);
-        let _ = write!(buf, "{sym} ");
-        write_fg!(buf, *label_c);
-        let _ = write!(buf, "{label}");
-        *col += 2 + label.len();
-
-        state.menu_click_regions.push(MenuClickRegion {
-            start_col: start,
-            end_col: *col,
-            action: MenuAction::ToggleSetting(SettingKey::Flash),
-        });
-    }
-
-    if *col + 4 >= cols { return; }
+    let flash_label = format!("Flash: {}", state.settings.flash.label());
+    if !render_menu_item(
+        buf, col, cols, bar_bg,
+        state.settings.flash != crate::state::FlashMode::Off,
+        &flash_label,
+        true,
+        &mut state.menu_click_regions,
+        MenuAction::ToggleSetting(SettingKey::Flash),
+    ) { return; }
 
     // --- Elapsed time ---
-    {
-        write_bg!(buf, state.config.bar_bg);
-        let _ = write!(buf, "  ");
-        *col += 2;
-
-        let on = state.settings.elapsed_time;
-        let (sym, sym_c, label_c) = if on {
-            ("●", &active_sym_c, &active_label_c)
-        } else {
-            ("○", &inactive_sym_c, &dim_label_c)
-        };
-        let label = if on { "Elapsed: on" } else { "Elapsed: off" };
-        let start = *col;
-        write_bg!(buf, state.config.bar_bg);
-        write_fg!(buf, *sym_c);
-        let _ = write!(buf, "{sym} ");
-        write_fg!(buf, *label_c);
-        let _ = write!(buf, "{label}");
-        *col += 2 + label.len();
-
-        state.menu_click_regions.push(MenuClickRegion {
-            start_col: start,
-            end_col: *col,
-            action: MenuAction::ToggleSetting(SettingKey::ElapsedTime),
-        });
-    }
-
-    if *col + 4 >= cols { return; }
+    let elapsed_label = if state.settings.elapsed_time { "Elapsed: on" } else { "Elapsed: off" };
+    if !render_menu_item(
+        buf, col, cols, bar_bg,
+        state.settings.elapsed_time,
+        elapsed_label,
+        false,
+        &mut state.menu_click_regions,
+        MenuAction::ToggleSetting(SettingKey::ElapsedTime),
+    ) { return; }
 
     // --- Notifications ---
-    {
-        write_bg!(buf, state.config.bar_bg);
-        let _ = write!(buf, "  ");
-        *col += 2;
-
-        let is_on = state.settings.notifications != crate::state::NotifyMode::Off;
-        let (sym, sym_c, label_c) = if is_on {
-            ("●", &active_sym_c, &active_label_c)
-        } else {
-            ("○", &inactive_sym_c, &dim_label_c)
-        };
-        let label = format!("Notify: {}", state.settings.notifications.label());
-        let start = *col;
-        write_bg!(buf, state.config.bar_bg);
-        write_fg!(buf, *sym_c);
-        let _ = write!(buf, "{sym} ");
-        write_fg!(buf, *label_c);
-        let _ = write!(buf, "{label}");
-        *col += 2 + label.len();
-
-        state.menu_click_regions.push(MenuClickRegion {
-            start_col: start,
-            end_col: *col,
-            action: MenuAction::ToggleSetting(SettingKey::Notifications),
-        });
-    }
-
-    if *col + 3 >= cols { return; }
+    let notify_label = format!("Notify: {}", state.settings.notifications.label());
+    if !render_menu_item(
+        buf, col, cols, bar_bg,
+        state.settings.notifications != crate::state::NotifyMode::Off,
+        &notify_label,
+        false,
+        &mut state.menu_click_regions,
+        MenuAction::ToggleSetting(SettingKey::Notifications),
+    ) { return; }
 
     // --- Close button ---
-    {
-        write_bg!(buf, state.config.bar_bg);
-        let _ = write!(buf, "  ");
-        *col += 2;
-        let start = *col;
-        write_bg!(buf, state.config.bar_bg);
-        write_fg!(buf, 255u8, 60u8, 60u8);
-        let _ = write!(buf, "×");
-        *col += 1;
-
-        state.menu_click_regions.push(MenuClickRegion {
-            start_col: start,
-            end_col: *col,
-            action: MenuAction::CloseMenu,
-        });
-    }
+    if *col + MIN_CLOSE_BTN_COLS >= cols { return; }
+    write_bg!(buf, bar_bg);
+    let _ = write!(buf, "  ");
+    *col += 2;
+    let start = *col;
+    write_bg!(buf, bar_bg);
+    write_fg!(buf, MENU_CLOSE_COLOR);
+    let _ = write!(buf, "×");
+    *col += 1;
+    state.menu_click_regions.push(MenuClickRegion {
+        start_col: start,
+        end_col: *col,
+        action: MenuAction::CloseMenu,
+    });
 }
 
 fn render_tabs(
@@ -390,10 +404,10 @@ fn render_tabs(
 
     // Compute max tab name length
     let fixed_per_tab: usize = tabs.iter().map(|t| {
-        let idx_str = format!("{}", t.position + 1);
+        let idx_digits = digit_count(t.position + 1);
         let mid_sep = if t.active { sep_left_width } else { sep_tab_width };
         // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
-        sep_left_width + 1 + idx_str.len() + 1 + mid_sep + 1 + sep_left_width
+        sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
     }).sum();
     let claude_overhead: usize = tab_infos
         .iter()
@@ -413,18 +427,17 @@ fn render_tabs(
 
     let overhead = *col + fixed_per_tab + claude_overhead + elapsed_overhead + indicator_overhead + count;
     let max_name_len = if overhead < cols {
-        ((cols - overhead) / count).min(20)
+        ((cols - overhead) / count).min(MAX_TAB_NAME_WIDTH)
     } else {
         0
     };
 
     for (i, tab) in tabs.iter().enumerate() {
-        if *col + 8 > cols {
+        if *col + MIN_TAB_COLS > cols {
             break;
         }
 
         let info = &tab_infos[i];
-        let is_claude = info.best_activity.is_some();
         let is_active = tab.active;
         let tab_name = &tab.name;
 
@@ -447,15 +460,14 @@ fn render_tabs(
             cfg.tab_inactive_fg
         };
 
-        // Truncate name
+        // Compute name truncation parameters (no allocation)
         let char_count = tab_name.chars().count();
-        let truncated = if max_name_len == 0 {
-            String::new()
+        let (name_chars, needs_ellipsis) = if max_name_len == 0 {
+            (0, false)
         } else if char_count > max_name_len {
-            let s: String = tab_name.chars().take(max_name_len.saturating_sub(1)).collect();
-            format!("{s}…")
+            (max_name_len.saturating_sub(1), true)
         } else {
-            tab_name.to_string()
+            (char_count, false)
         };
 
         let region_start = *col;
@@ -476,11 +488,11 @@ fn render_tabs(
         *col += sep_left_width;
 
         // Index part: " N "
-        let idx_str = format!("{}", tab.position + 1);
+        let idx_num = tab.position + 1;
         write_bg!(buf, idx_bg);
         write_fg!(buf, idx_fg);
-        let _ = write!(buf, "{BOLD} {idx_str} {RESET}");
-        *col += 1 + idx_str.len() + 1;
+        let _ = write!(buf, "{BOLD} {idx_num} {RESET}");
+        *col += 1 + digit_count(idx_num) + 1;
 
         // Transition from index to name area
         if is_active && !is_flash_bright {
@@ -503,9 +515,15 @@ fn render_tabs(
         let _ = write!(buf, "{BOLD} ");
         *col += 1;
 
-        if !truncated.is_empty() {
-            let _ = write!(buf, "{truncated}");
-            *col += display_width(&truncated);
+        if name_chars > 0 {
+            for c in tab_name.chars().take(name_chars) {
+                buf.push(c);
+                *col += char_width(c);
+            }
+            if needs_ellipsis {
+                buf.push('\u{2026}');
+                *col += 1;
+            }
         }
 
         // Fullscreen / floating indicators
@@ -521,8 +539,7 @@ fn render_tabs(
         }
 
         // Claude activity indicator
-        if is_claude {
-            let activity = info.best_activity.as_ref().unwrap();
+        if let Some(ref activity) = info.best_activity {
             if !matches!(activity, Activity::Idle) {
                 let symbol = activity_symbol(activity);
                 let icon_color = if is_flash_bright {
@@ -559,22 +576,12 @@ fn render_tabs(
         *col += sep_left_width;
 
         // Register click region
-        if is_claude {
-            state.click_regions.push(ClickRegion {
-                start_col: region_start,
-                end_col: *col,
-                tab_index: tab.position,
-                pane_id: info.waiting_pane_id.unwrap_or(0),
-                is_waiting: info.waiting_pane_id.is_some(),
-            });
-        } else {
-            state.click_regions.push(ClickRegion {
-                start_col: region_start,
-                end_col: *col,
-                tab_index: tab.position,
-                pane_id: 0,
-                is_waiting: false,
-            });
-        }
+        state.click_regions.push(ClickRegion {
+            start_col: region_start,
+            end_col: *col,
+            tab_index: tab.position,
+            pane_id: info.waiting_pane_id.unwrap_or(0),
+            is_waiting: info.waiting_pane_id.is_some(),
+        });
     }
 }
