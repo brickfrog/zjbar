@@ -362,7 +362,7 @@ impl State {
             let dominated = self
                 .sessions
                 .get(&pane_id)
-                .map(|existing| session.last_event_ts > existing.last_event_ts)
+                .map(|existing| session.last_event_ts >= existing.last_event_ts)
                 .unwrap_or(true);
             if dominated {
                 if let Some((idx, name)) = self.pane_to_tab.get(&pane_id) {

@@ -266,13 +266,6 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     let _ = std::io::stdout().flush();
 }
 
-/// Colors for settings menu items.
-const MENU_ACTIVE_SYM: Color = (80, 200, 120);
-const MENU_INACTIVE_SYM: Color = (100, 100, 100);
-const MENU_ACTIVE_LABEL: Color = (192, 202, 245);
-const MENU_DIM_LABEL: Color = (100, 100, 100);
-const MENU_CLOSE_COLOR: Color = (255, 60, 60);
-
 /// Render a single toggle menu item: "● Label" or "○ Label".
 /// Returns false if there was not enough space.
 fn render_menu_item(
@@ -285,6 +278,10 @@ fn render_menu_item(
     is_first: bool,
     regions: &mut Vec<MenuClickRegion>,
     action: MenuAction,
+    active_sym: Color,
+    inactive_sym: Color,
+    active_label: Color,
+    dim_label: Color,
 ) -> bool {
     // Spacing between items (skip for the first item)
     if !is_first {
@@ -297,9 +294,9 @@ fn render_menu_item(
     }
 
     let (sym, sym_c, label_c) = if is_on {
-        ("●", MENU_ACTIVE_SYM, MENU_ACTIVE_LABEL)
+        ("●", active_sym, active_label)
     } else {
-        ("○", MENU_INACTIVE_SYM, MENU_DIM_LABEL)
+        ("○", inactive_sym, dim_label)
     };
 
     let start = *col;
@@ -330,6 +327,7 @@ fn render_settings_menu(
     *col += 1;
 
     let bar_bg = state.config.bar_bg;
+    let cfg = &state.config;
 
     // --- Flash ---
     let flash_label = format!("Flash: {}", state.settings.flash.label());
@@ -340,6 +338,8 @@ fn render_settings_menu(
         true,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::Flash),
+        cfg.menu_active_sym, cfg.menu_inactive_sym,
+        cfg.menu_active_label, cfg.menu_dim_label,
     ) { return; }
 
     // --- Elapsed time ---
@@ -351,6 +351,8 @@ fn render_settings_menu(
         false,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::ElapsedTime),
+        cfg.menu_active_sym, cfg.menu_inactive_sym,
+        cfg.menu_active_label, cfg.menu_dim_label,
     ) { return; }
 
     // --- Notifications ---
@@ -362,6 +364,8 @@ fn render_settings_menu(
         false,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::Notifications),
+        cfg.menu_active_sym, cfg.menu_inactive_sym,
+        cfg.menu_active_label, cfg.menu_dim_label,
     ) { return; }
 
     // --- Close button ---
@@ -371,7 +375,7 @@ fn render_settings_menu(
     *col += 2;
     let start = *col;
     write_bg!(buf, bar_bg);
-    write_fg!(buf, MENU_CLOSE_COLOR);
+    write_fg!(buf, cfg.menu_close);
     let _ = write!(buf, "×");
     *col += 1;
     state.menu_click_regions.push(MenuClickRegion {
@@ -585,5 +589,114 @@ fn render_tabs(
             pane_id: info.waiting_pane_id.unwrap_or(0),
             is_waiting: info.waiting_pane_id.is_some(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- char_width --
+
+    #[test]
+    fn char_width_ascii() {
+        assert_eq!(char_width('a'), 1);
+        assert_eq!(char_width('Z'), 1);
+        assert_eq!(char_width('0'), 1);
+        assert_eq!(char_width(' '), 1);
+        assert_eq!(char_width('!'), 1);
+    }
+
+    #[test]
+    fn char_width_cjk() {
+        assert_eq!(char_width('中'), 2);
+        assert_eq!(char_width('文'), 2);
+        assert_eq!(char_width('日'), 2);
+        assert_eq!(char_width('한'), 2); // Korean
+    }
+
+    #[test]
+    fn char_width_fullwidth() {
+        assert_eq!(char_width('Ａ'), 2); // fullwidth A (U+FF21)
+        assert_eq!(char_width('１'), 2); // fullwidth 1 (U+FF11)
+    }
+
+    // -- display_width --
+
+    #[test]
+    fn display_width_ascii() {
+        assert_eq!(display_width("hello"), 5);
+        assert_eq!(display_width(""), 0);
+    }
+
+    #[test]
+    fn display_width_mixed() {
+        assert_eq!(display_width("Hello世界"), 9); // 5 + 2*2
+        assert_eq!(display_width("ab中cd"), 6); // 2 + 2 + 2
+    }
+
+    // -- digit_count --
+
+    #[test]
+    fn digit_count_values() {
+        assert_eq!(digit_count(0), 1);
+        assert_eq!(digit_count(1), 1);
+        assert_eq!(digit_count(9), 1);
+        assert_eq!(digit_count(10), 2);
+        assert_eq!(digit_count(99), 2);
+        assert_eq!(digit_count(100), 3);
+        assert_eq!(digit_count(999), 3);
+        assert_eq!(digit_count(1000), 4);
+    }
+
+    // -- format_elapsed --
+
+    #[test]
+    fn format_elapsed_seconds() {
+        assert_eq!(format_elapsed(0), "0s");
+        assert_eq!(format_elapsed(30), "30s");
+        assert_eq!(format_elapsed(59), "59s");
+    }
+
+    #[test]
+    fn format_elapsed_minutes() {
+        assert_eq!(format_elapsed(60), "1m");
+        assert_eq!(format_elapsed(120), "2m");
+        assert_eq!(format_elapsed(3599), "59m");
+    }
+
+    #[test]
+    fn format_elapsed_hours() {
+        assert_eq!(format_elapsed(3600), "1h");
+        assert_eq!(format_elapsed(7200), "2h");
+    }
+
+    // -- activity_priority --
+
+    #[test]
+    fn activity_priority_ordering() {
+        assert!(activity_priority(&Activity::Waiting) > activity_priority(&Activity::Tool("Bash".into())));
+        assert!(activity_priority(&Activity::Tool("Bash".into())) > activity_priority(&Activity::Thinking));
+        assert!(activity_priority(&Activity::Thinking) > activity_priority(&Activity::Prompting));
+        assert!(activity_priority(&Activity::Done) > activity_priority(&Activity::AgentDone));
+        assert!(activity_priority(&Activity::AgentDone) > activity_priority(&Activity::Idle));
+    }
+
+    // -- activity_symbol --
+
+    #[test]
+    fn activity_symbol_tools() {
+        assert_eq!(activity_symbol(&Activity::Tool("Bash".into())), "⚡");
+        assert_eq!(activity_symbol(&Activity::Tool("Read".into())), "◉");
+        assert_eq!(activity_symbol(&Activity::Tool("Edit".into())), "✎");
+        assert_eq!(activity_symbol(&Activity::Tool("Unknown".into())), "⚙");
+    }
+
+    #[test]
+    fn activity_symbol_states() {
+        assert_eq!(activity_symbol(&Activity::Thinking), "●");
+        assert_eq!(activity_symbol(&Activity::Done), "✓");
+        assert_eq!(activity_symbol(&Activity::Waiting), "⚠");
+        assert_eq!(activity_symbol(&Activity::Idle), "○");
     }
 }

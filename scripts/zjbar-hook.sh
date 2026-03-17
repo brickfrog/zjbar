@@ -13,24 +13,37 @@ ZJBAR_DEBUG="${ZJBAR_DEBUG:-0}"
 [ -z "$ZELLIJ_SESSION_NAME" ] && exit 0
 [ -z "$ZELLIJ_PANE_ID" ] && exit 0
 
+# Require jq for JSON parsing
+command -v jq >/dev/null 2>&1 || { echo "zjbar: jq is required but not found" >&2; exit 1; }
+
+# Source shared library
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=zjbar-lib.sh
+source "${SCRIPT_DIR}/zjbar-lib.sh"
+
 # Read hook JSON from stdin
 INPUT=$(cat)
 
 # Resolve plugin root: CodeBuddy uses CODEBUDDY_PLUGIN_ROOT, Claude Code uses CLAUDE_PLUGIN_ROOT
 PLUGIN_ROOT="${CODEBUDDY_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 
-# Extract all fields in a single jq call (required dependency)
-eval "$(echo "$INPUT" | jq -r '
-  @sh "HOOK_EVENT=\(.hook_event_name // "")",
-  @sh "SESSION_ID=\(.session_id // "")",
-  @sh "TOOL_NAME=\(.tool_name // "")",
-  @sh "CWD=\(.cwd // "")",
-  @sh "TRANSCRIPT_PATH=\(.transcript_path // "")",
-  @sh "NOTIF_MESSAGE=\(.message // "")",
-  @sh "NOTIF_TITLE=\(.title // "")",
-  @sh "NOTIF_TYPE=\(.notification_type // "")",
-  @sh "AGENT_ID=\(.agent_id // "")"
-')"
+# Extract fields from JSON.
+# Structured ID/path fields are safe to join with tab; free-text fields
+# (message, title) are extracted separately to avoid delimiter issues.
+_FIELDS=$(echo "$INPUT" | jq -r '[
+  .hook_event_name // "",
+  .session_id // "",
+  .tool_name // "",
+  .cwd // "",
+  .transcript_path // "",
+  .notification_type // "",
+  .agent_id // ""
+] | join("\t")') || exit 0
+
+IFS=$'\t' read -r HOOK_EVENT SESSION_ID TOOL_NAME CWD TRANSCRIPT_PATH \
+  NOTIF_TYPE AGENT_ID <<< "$_FIELDS"
+NOTIF_MESSAGE=$(echo "$INPUT" | jq -r '.message // ""')
+NOTIF_TITLE=$(echo "$INPUT" | jq -r '.title // ""')
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
@@ -170,13 +183,7 @@ extract_summary() {
       ' 2>/dev/null |
       tail -1)
     [ -z "$text" ] && return
-    # Strip markdown formatting
-    text=$(echo "$text" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
-    # Truncate to 120 chars at word boundary
-    if [ ${#text} -gt 120 ]; then
-      text="${text:0:117}"
-      text="${text% *}..."
-    fi
+    text=$(zjbar_clean_and_truncate "$text")
     # Count tool usage in recent messages
     # Claude Code: tool_use embedded in assistant message content
     # CodeBuddy: function_call as separate top-level entries
@@ -245,32 +252,9 @@ extract_summary() {
 }
 
 # Desktop notification + bell
-# Default notify events: PermissionRequest, Notification, Stop
-# Override via ~/.config/zellij/plugins/zjbar.json:
-#   { "notify_events": ["PermissionRequest", "Stop"], "notifications": "always" }
-SETTINGS_FILE="$HOME/.config/zellij/plugins/zjbar.json"
-DEFAULT_NOTIFY_EVENTS="PermissionRequest Notification Stop"
-NOTIFY_EVENTS="$DEFAULT_NOTIFY_EVENTS"
-NOTIFY_MODE="always"
+zjbar_load_notify_settings
 
-if [ -f "$SETTINGS_FILE" ]; then
-  CUSTOM_EVENTS=$(jq -r '.notify_events // empty | join(" ")' "$SETTINGS_FILE" 2>/dev/null)
-  [ -n "$CUSTOM_EVENTS" ] && NOTIFY_EVENTS="$CUSTOM_EVENTS"
-  CUSTOM_MODE=$(jq -r '.notifications // empty' "$SETTINGS_FILE" 2>/dev/null)
-  [ -n "$CUSTOM_MODE" ] && NOTIFY_MODE=$(echo "$CUSTOM_MODE" | tr '[:upper:]' '[:lower:]')
-fi
-
-# Check if current event is in the notify list
-# Use NOTIFY_AS_EVENT (which maps SubagentStop→Stop) for notification matching.
-IS_NOTIFY_EVENT=false
-for EVT in $NOTIFY_EVENTS; do
-  [ "$NOTIFY_AS_EVENT" = "$EVT" ] && {
-    IS_NOTIFY_EVENT=true
-    break
-  }
-done
-
-if [ "$IS_NOTIFY_EVENT" = true ]; then
+if zjbar_is_notify_event "$NOTIFY_AS_EVENT"; then
   # Bell for PermissionRequest
   [ "$NOTIFY_AS_EVENT" = "PermissionRequest" ] && printf '\a' >/dev/tty 2>/dev/null || true
 
@@ -288,35 +272,17 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
   case "$NOTIFY_AS_EVENT" in
   Stop)
     TITLE="✅ $APP_NAME"
-    if [ -n "$SUMMARY" ]; then
-      MESSAGE="$SUMMARY"
-    else
-      MESSAGE="Task completed"
-    fi
+    MESSAGE="${SUMMARY:-Task completed}"
     ;;
   PermissionRequest)
     TOOL_SUFFIX=""
     [ -n "$TOOL_NAME" ] && TOOL_SUFFIX=" — $TOOL_NAME"
     TITLE="⚠ $APP_NAME"
-    if [ -n "$SUMMARY" ]; then
-      MESSAGE="$SUMMARY"
-    else
-      MESSAGE="Permission requested${TOOL_SUFFIX}"
-    fi
+    MESSAGE="${SUMMARY:-Permission requested${TOOL_SUFFIX}}"
     ;;
   Notification)
-    if [ -n "$NOTIF_TITLE" ]; then
-      TITLE="$NOTIF_TITLE"
-    else
-      TITLE="$APP_NAME"
-    fi
-    if [ -n "$SUMMARY" ]; then
-      MESSAGE="$SUMMARY"
-    elif [ -n "$NOTIF_MESSAGE" ]; then
-      MESSAGE="$NOTIF_MESSAGE"
-    else
-      MESSAGE="Notification received"
-    fi
+    TITLE="${NOTIF_TITLE:-$APP_NAME}"
+    MESSAGE="${SUMMARY:-${NOTIF_MESSAGE:-Notification received}}"
     ;;
   *)
     TITLE="$APP_NAME"
@@ -324,70 +290,8 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ;;
   esac
 
-  # For "unfocused" mode, check if the terminal app is frontmost
-  SHOULD_NOTIFY=false
-  case "$NOTIFY_MODE" in
-  always) SHOULD_NOTIFY=true ;;
-  unfocused)
-    TERM_FOCUSED=false
-    case "$(uname)" in
-    Darwin)
-      EXPECTED="${TERM_PROGRAM:-}"
-      case "$EXPECTED" in
-      Apple_Terminal) EXPECTED="Terminal" ;;
-      iTerm.app) EXPECTED="iTerm2" ;;
-      esac
-      FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-      [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-      ;;
-    Linux)
-      if command -v xdotool >/dev/null 2>&1; then
-        ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-        if [ -n "$ACTIVE_PID" ]; then
-          PID=$$
-          while [ "$PID" -gt 1 ] 2>/dev/null; do
-            [ "$PID" = "$ACTIVE_PID" ] && {
-              TERM_FOCUSED=true
-              break
-            }
-            PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-          done
-        fi
-      fi
-      ;;
-    esac
-    [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
-    ;;
-  esac
-
-  if [ "$SHOULD_NOTIFY" = true ]; then
-    # Click callback: activate terminal + focus the pane
-    ZELLIJ_BIN=$(command -v zellij)
-    FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-    case "$(uname)" in
-    Darwin)
-      [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-      ICON_PATH="${PLUGIN_ROOT}/assets/$ICON_FILE"
-      ICON_FLAG=()
-      [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-      if command -v terminal-notifier >/dev/null 2>&1; then
-        terminal-notifier \
-          "${ICON_FLAG[@]}" \
-          -group "zjbar-${ZELLIJ_PANE_ID}" \
-          -title "$TITLE" \
-          -message "$MESSAGE" \
-          -execute "$FOCUS_CMD" &
-      else
-        osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-      fi
-      ;;
-    Linux)
-      if command -v notify-send >/dev/null 2>&1; then
-        notify-send "$TITLE" "$MESSAGE" &
-      fi
-      ;;
-    esac
+  if zjbar_check_should_notify; then
+    zjbar_send_notification "$TITLE" "$MESSAGE" "${PLUGIN_ROOT}/assets" "$ICON_FILE"
   fi
 fi
 

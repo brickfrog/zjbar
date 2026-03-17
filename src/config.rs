@@ -66,8 +66,13 @@ const D_ACTIVITY_PROMPT: Color = (158, 206, 106);  // #9ece6a
 
 const D_ELAPSED_FG: Color = (86, 95, 137);         // #565f89
 
+const D_MENU_ACTIVE_SYM: Color = (80, 200, 120);
+const D_MENU_INACTIVE_SYM: Color = (100, 100, 100);
+const D_MENU_ACTIVE_LABEL: Color = (192, 202, 245); // #c0caf5
+const D_MENU_DIM_LABEL: Color = (100, 100, 100);
+const D_MENU_CLOSE: Color = (255, 60, 60);
+
 /// All configuration parsed from the KDL plugin block.
-#[allow(dead_code)]
 pub struct BarConfig {
     // Global
     pub bar_bg: Color,
@@ -128,6 +133,7 @@ pub struct BarConfig {
     pub activity_thinking_color: Color,
     pub activity_tool_color: Color,
     pub activity_waiting_color: Color,
+    #[allow(dead_code)] // Reserved for future use (currently Waiting uses activity_waiting_color)
     pub activity_permission_color: Color,
     pub activity_done_color: Color,
     pub activity_prompt_color: Color,
@@ -135,12 +141,20 @@ pub struct BarConfig {
     // Elapsed time color
     pub elapsed_fg: Color,
 
+    // Settings menu colors
+    pub menu_active_sym: Color,
+    pub menu_inactive_sym: Color,
+    pub menu_active_label: Color,
+    pub menu_dim_label: Color,
+    pub menu_close: Color,
+
     // Tab indicators
     pub tab_fullscreen_indicator: String,
     pub tab_floating_indicator: String,
 
     // Separators
     pub separator_left: String,
+    #[allow(dead_code)] // Available for right-side rendering in the future
     pub separator_right: String,
     pub separator_tab: String,
 }
@@ -217,6 +231,12 @@ impl BarConfig {
             activity_prompt_color:   "activity_prompt_color"   => D_ACTIVITY_PROMPT,
 
             elapsed_fg:              "elapsed_fg"              => D_ELAPSED_FG,
+
+            menu_active_sym:         "menu_active_sym"         => D_MENU_ACTIVE_SYM,
+            menu_inactive_sym:       "menu_inactive_sym"       => D_MENU_INACTIVE_SYM,
+            menu_active_label:       "menu_active_label"       => D_MENU_ACTIVE_LABEL,
+            menu_dim_label:          "menu_dim_label"          => D_MENU_DIM_LABEL,
+            menu_close:              "menu_close"              => D_MENU_CLOSE,
         )
     }
 
@@ -262,5 +282,57 @@ impl BarConfig {
 impl Default for BarConfig {
     fn default() -> Self {
         Self::from_kdl(&BTreeMap::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hex_color_valid() {
+        assert_eq!(parse_hex_color("#7aa2f7"), Some((122, 162, 247)));
+        assert_eq!(parse_hex_color("#000000"), Some((0, 0, 0)));
+        assert_eq!(parse_hex_color("#ffffff"), Some((255, 255, 255)));
+        assert_eq!(parse_hex_color("#FF0000"), Some((255, 0, 0)));
+    }
+
+    #[test]
+    fn parse_hex_color_without_hash() {
+        assert_eq!(parse_hex_color("7aa2f7"), Some((122, 162, 247)));
+    }
+
+    #[test]
+    fn parse_hex_color_with_whitespace() {
+        assert_eq!(parse_hex_color("  #7aa2f7  "), Some((122, 162, 247)));
+    }
+
+    #[test]
+    fn parse_hex_color_invalid() {
+        assert_eq!(parse_hex_color(""), None);
+        assert_eq!(parse_hex_color("#fff"), None); // too short
+        assert_eq!(parse_hex_color("#gggggg"), None); // invalid hex
+        assert_eq!(parse_hex_color("#7aa2f7ff"), None); // too long
+    }
+
+    #[test]
+    fn get_color_uses_default() {
+        let config = BTreeMap::new();
+        assert_eq!(get_color(&config, "missing", (1, 2, 3)), (1, 2, 3));
+    }
+
+    #[test]
+    fn get_color_uses_config() {
+        let mut config = BTreeMap::new();
+        config.insert("bg".into(), "#ff0000".into());
+        assert_eq!(get_color(&config, "bg", (0, 0, 0)), (255, 0, 0));
+    }
+
+    #[test]
+    fn default_config_matches_from_empty() {
+        let default = BarConfig::default();
+        assert_eq!(default.bar_bg, D_BAR_BG);
+        assert_eq!(default.session_bg, D_SESSION_BG);
+        assert_eq!(default.tab_active_bg, D_TAB_ACTIVE_BG);
     }
 }

@@ -41,7 +41,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         "Notification" => Activity::Notification,
         "Suspending" => Activity::Suspending,
         "Stop" => Activity::Done,
-        _ => Activity::Idle,
+        _ => return, // Unknown events: preserve existing activity state
     };
 
     let (tab_index, tab_name) = state

@@ -14,6 +14,18 @@ if [ -z "$ZELLIJ_SESSION_NAME" ] || [ -z "$ZELLIJ_PANE_ID" ]; then
   exit 0
 fi
 
+# Require jq for JSON parsing
+if ! command -v jq >/dev/null 2>&1; then
+  echo '{}' # Gemini requires JSON stdout
+  echo "zjbar: jq is required but not found" >&2
+  exit 1
+fi
+
+# Source shared library
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=zjbar-lib.sh
+source "${SCRIPT_DIR}/zjbar-lib.sh"
+
 # Read hook JSON from stdin
 INPUT=$(cat)
 [ -z "$INPUT" ] && { echo '{}'; exit 0; }
@@ -25,13 +37,16 @@ HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null)
 [ -z "$HOOK_EVENT" ] && HOOK_EVENT="${ZJBAR_GEMINI_EVENT:-}"
 [ -z "$HOOK_EVENT" ] && { echo '{}'; exit 0; }
 
-# Extract common fields from Gemini hook input
-eval "$(echo "$INPUT" | jq -r '
-  @sh "SESSION_ID=\(.session_id // "")",
-  @sh "GEMINI_CWD_INPUT=\(.cwd // "")",
-  @sh "TOOL_NAME=\(.tool_name // "")",
-  @sh "PROMPT_RESPONSE=\(.prompt_response // "")"
-' 2>/dev/null)" || true
+# Extract common fields from Gemini hook input.
+# Structured ID/path fields joined with tab; free-text field extracted separately.
+_FIELDS=$(echo "$INPUT" | jq -r '[
+  .session_id // "",
+  .cwd // "",
+  .tool_name // ""
+] | join("\t")' 2>/dev/null) || true
+
+IFS=$'\t' read -r SESSION_ID GEMINI_CWD_INPUT TOOL_NAME <<< "$_FIELDS"
+PROMPT_RESPONSE=$(echo "$INPUT" | jq -r '.prompt_response // ""' 2>/dev/null)
 
 # Use cwd from input, fall back to env vars
 EFFECTIVE_CWD="${GEMINI_CWD_INPUT:-${GEMINI_CWD:-${GEMINI_PROJECT_DIR:-}}}"
@@ -99,119 +114,19 @@ PAYLOAD=$(jq -nc \
     term_program: (if $term_program == "" then null else $term_program end)
   }')
 
-# -- Summary extraction --
-# Gemini AfterAgent provides prompt_response directly in the hook input.
-# Clean markdown and truncate for desktop notification.
-extract_summary() {
-  local text="$1"
-  [ -z "$text" ] && return
-
-  # Strip markdown formatting
-  text=$(echo "$text" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
-  # Truncate to 120 chars at word boundary
-  if [ ${#text} -gt 120 ]; then
-    text="${text:0:117}"
-    text="${text% *}..."
-  fi
-  echo "$text"
-}
-
 # -- Desktop notification --
-SETTINGS_FILE="$HOME/.config/zellij/plugins/zjbar.json"
-DEFAULT_NOTIFY_EVENTS="PermissionRequest Notification Stop"
-NOTIFY_EVENTS="$DEFAULT_NOTIFY_EVENTS"
-NOTIFY_MODE="always"
+zjbar_load_notify_settings
 
-if [ -f "$SETTINGS_FILE" ]; then
-  CUSTOM_EVENTS=$(jq -r '.notify_events // empty | join(" ")' "$SETTINGS_FILE" 2>/dev/null)
-  [ -n "$CUSTOM_EVENTS" ] && NOTIFY_EVENTS="$CUSTOM_EVENTS"
-  CUSTOM_MODE=$(jq -r '.notifications // empty' "$SETTINGS_FILE" 2>/dev/null)
-  [ -n "$CUSTOM_MODE" ] && NOTIFY_MODE=$(echo "$CUSTOM_MODE" | tr '[:upper:]' '[:lower:]')
-fi
-
-IS_NOTIFY_EVENT=false
-for EVT in $NOTIFY_EVENTS; do
-  [ "$ZJBAR_EVENT" = "$EVT" ] && { IS_NOTIFY_EVENT=true; break; }
-done
-
-# Resolve script directory for notification icon
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -d "${SCRIPT_DIR}/assets" ]; then
-  ICON_DIR="${SCRIPT_DIR}/assets"
-else
-  ICON_DIR="$(dirname "$SCRIPT_DIR")/assets"
-fi
-
-if [ "$IS_NOTIFY_EVENT" = true ] && [ "$ZJBAR_EVENT" = "Stop" ]; then
-  # Extract summary from AfterAgent's prompt_response
-  SUMMARY=$(extract_summary "$PROMPT_RESPONSE")
+if zjbar_is_notify_event "$ZJBAR_EVENT" && [ "$ZJBAR_EVENT" = "Stop" ]; then
+  SUMMARY=$(zjbar_clean_and_truncate "$PROMPT_RESPONSE")
 
   TITLE="✅ Gemini"
-  if [ -n "$SUMMARY" ]; then
-    MESSAGE="$SUMMARY"
-  else
-    MESSAGE="Task completed"
-  fi
+  MESSAGE="${SUMMARY:-Task completed}"
 
-  SHOULD_NOTIFY=false
-  case "$NOTIFY_MODE" in
-  always) SHOULD_NOTIFY=true ;;
-  unfocused)
-    TERM_FOCUSED=false
-    case "$(uname)" in
-    Darwin)
-      EXPECTED="${TERM_PROGRAM:-}"
-      case "$EXPECTED" in
-      Apple_Terminal) EXPECTED="Terminal" ;;
-      iTerm.app) EXPECTED="iTerm2" ;;
-      esac
-      FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-      [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-      ;;
-    Linux)
-      if command -v xdotool >/dev/null 2>&1; then
-        ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-        if [ -n "$ACTIVE_PID" ]; then
-          PID=$$
-          while [ "$PID" -gt 1 ] 2>/dev/null; do
-            [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
-            PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-          done
-        fi
-      fi
-      ;;
-    esac
-    [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
-    ;;
-  esac
+  ICON_DIR=$(zjbar_resolve_icon_dir)
 
-  if [ "$SHOULD_NOTIFY" = true ]; then
-    ZELLIJ_BIN=$(command -v zellij)
-    FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-    case "$(uname)" in
-    Darwin)
-      [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-      ICON_PATH="${ICON_DIR}/gemini-logo.png"
-      ICON_FLAG=()
-      [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-      if command -v terminal-notifier >/dev/null 2>&1; then
-        terminal-notifier \
-          "${ICON_FLAG[@]}" \
-          -group "zjbar-${ZELLIJ_PANE_ID}" \
-          -title "$TITLE" \
-          -message "$MESSAGE" \
-          -execute "$FOCUS_CMD" &
-      else
-        osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-      fi
-      ;;
-    Linux)
-      if command -v notify-send >/dev/null 2>&1; then
-        notify-send "$TITLE" "$MESSAGE" &
-      fi
-      ;;
-    esac
+  if zjbar_check_should_notify; then
+    zjbar_send_notification "$TITLE" "$MESSAGE" "$ICON_DIR" "gemini-logo.png"
   fi
 fi
 

@@ -13,6 +13,14 @@
 [ -z "$ZELLIJ_SESSION_NAME" ] && exit 0
 [ -z "$ZELLIJ_PANE_ID" ] && exit 0
 
+# Require jq for JSON parsing
+command -v jq >/dev/null 2>&1 || { echo "zjbar: jq is required but not found" >&2; exit 1; }
+
+# Source shared library
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=zjbar-lib.sh
+source "${SCRIPT_DIR}/zjbar-lib.sh"
+
 # Read JSON from first argument (Codex passes notification as $1)
 INPUT="${1:-}"
 [ -z "$INPUT" ] && exit 0
@@ -23,24 +31,16 @@ EVENT_TYPE=$(echo "$INPUT" | jq -r '.type // ""' 2>/dev/null)
 # Only handle agent-turn-complete events
 [ "$EVENT_TYPE" != "agent-turn-complete" ] && exit 0
 
-# Extract notification details
-eval "$(echo "$INPUT" | jq -r '
-  @sh "THREAD_ID=\(."thread-id" // "")",
-  @sh "TURN_ID=\(."turn-id" // "")",
-  @sh "CWD=\(.cwd // "")",
-  @sh "LAST_MESSAGE=\(."last-assistant-message" // "")"
-')"
+# Extract notification details.
+# Structured ID/path fields joined with tab; free-text field extracted separately.
+_FIELDS=$(echo "$INPUT" | jq -r '[
+  ."thread-id" // "",
+  ."turn-id" // "",
+  .cwd // ""
+] | join("\t")') || exit 0
 
-# Resolve script directory (for notification icon)
-# Works both in-repo (scripts/ → ../assets/) and installed (~/.codex/zjbar/ → assets/)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Try installed location first (assets/ sibling), then repo layout (../assets/)
-if [ -d "${SCRIPT_DIR}/assets" ]; then
-  ICON_DIR="${SCRIPT_DIR}/assets"
-else
-  ICON_DIR="$(dirname "$SCRIPT_DIR")/assets"
-fi
+IFS=$'\t' read -r THREAD_ID TURN_ID CWD <<< "$_FIELDS"
+LAST_MESSAGE=$(echo "$INPUT" | jq -r '."last-assistant-message" // ""')
 
 # Build zjbar JSON payload (maps to Stop event)
 PAYLOAD=$(jq -nc \
@@ -63,89 +63,18 @@ PAYLOAD=$(jq -nc \
   }')
 
 # -- Desktop notification --
-SETTINGS_FILE="$HOME/.config/zellij/plugins/zjbar.json"
-NOTIFY_MODE="always"
+zjbar_load_notify_settings
 
-if [ -f "$SETTINGS_FILE" ]; then
-  CUSTOM_MODE=$(jq -r '.notifications // empty' "$SETTINGS_FILE" 2>/dev/null)
-  [ -n "$CUSTOM_MODE" ] && NOTIFY_MODE=$(echo "$CUSTOM_MODE" | tr '[:upper:]' '[:lower:]')
-fi
-
-# Build notification summary from last-assistant-message
 SUMMARY=""
-if [ -n "$LAST_MESSAGE" ]; then
-  # Strip markdown formatting
-  SUMMARY=$(echo "$LAST_MESSAGE" | sed -E 's/\*\*//g; s/\*//g; s/`//g; s/^#+ //; s/\[([^]]*)\]\([^)]*\)/\1/g' | tr '\n' ' ' | sed 's/  */ /g')
-  # Truncate to 120 chars at word boundary
-  if [ ${#SUMMARY} -gt 120 ]; then
-    SUMMARY="${SUMMARY:0:117}"
-    SUMMARY="${SUMMARY% *}..."
-  fi
-fi
+[ -n "$LAST_MESSAGE" ] && SUMMARY=$(zjbar_clean_and_truncate "$LAST_MESSAGE")
 
 TITLE="✅ Codex"
 MESSAGE="${SUMMARY:-Task completed}"
 
-# -- Desktop notification (immediate, no rate-limit) --
-SHOULD_NOTIFY=false
-case "$NOTIFY_MODE" in
-always) SHOULD_NOTIFY=true ;;
-unfocused)
-  TERM_FOCUSED=false
-  case "$(uname)" in
-  Darwin)
-    EXPECTED="${TERM_PROGRAM:-}"
-    case "$EXPECTED" in
-    Apple_Terminal) EXPECTED="Terminal" ;;
-    iTerm.app) EXPECTED="iTerm2" ;;
-    esac
-    FRONT_APP=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)
-    [ "$FRONT_APP" = "$EXPECTED" ] && TERM_FOCUSED=true
-    ;;
-  Linux)
-    if command -v xdotool >/dev/null 2>&1; then
-      ACTIVE_PID=$(xdotool getactivewindow getwindowpid 2>/dev/null)
-      if [ -n "$ACTIVE_PID" ]; then
-        PID=$$
-        while [ "$PID" -gt 1 ] 2>/dev/null; do
-          [ "$PID" = "$ACTIVE_PID" ] && { TERM_FOCUSED=true; break; }
-          PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
-        done
-      fi
-    fi
-    ;;
-  esac
-  [ "$TERM_FOCUSED" = false ] && SHOULD_NOTIFY=true
-  ;;
-esac
+ICON_DIR=$(zjbar_resolve_icon_dir)
 
-if [ "$SHOULD_NOTIFY" = true ]; then
-  ZELLIJ_BIN=$(command -v zellij)
-  FOCUS_CMD="${ZELLIJ_BIN} -s '${ZELLIJ_SESSION_NAME}' pipe --name zjbar:focus -- ${ZELLIJ_PANE_ID}"
-
-  case "$(uname)" in
-  Darwin)
-    [ -n "${TERM_PROGRAM:-}" ] && FOCUS_CMD="open -a '${TERM_PROGRAM}' && ${FOCUS_CMD}"
-    ICON_PATH="${ICON_DIR}/codex-logo.png"
-    ICON_FLAG=()
-    [ -f "$ICON_PATH" ] && ICON_FLAG=(-contentImage "$ICON_PATH")
-    if command -v terminal-notifier >/dev/null 2>&1; then
-      terminal-notifier \
-        "${ICON_FLAG[@]}" \
-        -group "zjbar-${ZELLIJ_PANE_ID}" \
-        -title "$TITLE" \
-        -message "$MESSAGE" \
-        -execute "$FOCUS_CMD" &
-    else
-      osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" &
-    fi
-    ;;
-  Linux)
-    if command -v notify-send >/dev/null 2>&1; then
-      notify-send "$TITLE" "$MESSAGE" &
-    fi
-    ;;
-  esac
+if zjbar_is_notify_event "Stop" && zjbar_check_should_notify; then
+  zjbar_send_notification "$TITLE" "$MESSAGE" "$ICON_DIR" "codex-logo.png"
 fi
 
 # Send to plugin (fire-and-forget)
