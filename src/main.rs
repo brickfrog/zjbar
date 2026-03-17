@@ -247,8 +247,22 @@ impl State {
     fn cleanup_stale_sessions(&mut self) -> bool {
         let now = unix_now();
         let mut changed = false;
+        let mut suspending_done_panes: Vec<u32> = Vec::new();
         for session in self.sessions.values_mut() {
             match session.activity {
+                state::Activity::Suspending => {
+                    // Suspending → Done after SUSPENDING_TIMEOUT (fallback if
+                    // SubagentStop never arrives).
+                    if let Some(started) = session.suspending_started_at {
+                        if now.saturating_sub(started) >= state::SUSPENDING_TIMEOUT {
+                            session.activity = state::Activity::Done;
+                            session.suspending_started_at = None;
+                            session.last_event_ts = now;
+                            suspending_done_panes.push(session.pane_id);
+                            changed = true;
+                        }
+                    }
+                }
                 state::Activity::Done | state::Activity::AgentDone => {
                     if now.saturating_sub(session.last_event_ts) >= DONE_TIMEOUT {
                         session.activity = state::Activity::Idle;
@@ -258,7 +272,36 @@ impl State {
                 _ => {}
             }
         }
+        // Fire desktop notification for Suspending → Done transitions.
+        // The shell hook couldn't send it at idle_prompt time because we
+        // were still waiting for SubagentStop.
+        for pane_id in suspending_done_panes {
+            self.fire_suspending_done_notification(pane_id);
+        }
         changed
+    }
+
+    /// Send a desktop notification when a Suspending session times out to Done.
+    /// This compensates for the shell hook not sending a notification at
+    /// idle_prompt time (it only sends Suspending to Rust, not Stop).
+    fn fire_suspending_done_notification(&self, _pane_id: u32) {
+        let app_name = if self.term_program.as_deref() == Some("codebuddy") {
+            "CodeBuddy"
+        } else {
+            "Claude Code"
+        };
+        let title = format!("✅ {}", app_name);
+        let message = "Task completed";
+        let cmd = format!(
+            "command -v terminal-notifier >/dev/null 2>&1 && \
+             terminal-notifier -title '{}' -message '{}' || \
+             command -v notify-send >/dev/null 2>&1 && \
+             notify-send '{}' '{}'",
+            title, message, title, message
+        );
+        let mut ctx = BTreeMap::new();
+        ctx.insert("type".into(), "suspending_notify".into());
+        run_command(&["sh", "-c", &cmd], ctx);
     }
 
     fn clear_flashes_on_tab(&mut self, tab_idx: usize) {

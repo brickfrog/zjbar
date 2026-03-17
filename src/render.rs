@@ -15,6 +15,7 @@ fn activity_priority(activity: &Activity) -> u8 {
         Activity::Prompting => 5,
         Activity::Notification => 4,
         Activity::Init => 3,
+        Activity::Suspending => 2,
         Activity::Done => 2,
         Activity::AgentDone => 1,
         Activity::Idle => 0,
@@ -36,6 +37,7 @@ fn activity_symbol(activity: &Activity) -> &'static str {
         Activity::Prompting => "▶",
         Activity::Waiting => "⚠",
         Activity::Notification => "◇",
+        Activity::Suspending => "⏳",
         Activity::Done | Activity::AgentDone => "✓",
         Activity::Idle => "○",
     }

@@ -17,10 +17,16 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         return;
     }
 
-    // Ignore subagent events — only track the main agent.
-    // SubagentStop should never arrive (removed from hooks.json and filtered
-    // in zjbar-hook.sh), but guard here as an extra safety net.
+    // SubagentStop: if the session is in Suspending state (waiting for
+    // subagents to finish), transition to Done.  Otherwise ignore it.
     if event == "SubagentStop" {
+        if let Some(session) = state.sessions.get_mut(&payload.pane_id) {
+            if matches!(session.activity, Activity::Suspending) {
+                session.activity = Activity::Done;
+                session.suspending_started_at = None;
+                session.last_event_ts = crate::state::unix_now();
+            }
+        }
         return;
     }
 
@@ -33,6 +39,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         "UserPromptSubmit" => Activity::Thinking,
         "PermissionRequest" => Activity::Waiting,
         "Notification" => Activity::Notification,
+        "Suspending" => Activity::Suspending,
         "Stop" => Activity::Done,
         _ => Activity::Idle,
     };
@@ -54,6 +61,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
             tab_index: None,
             last_event_ts: 0,
             cwd: None,
+            suspending_started_at: None,
         });
 
     if matches!(activity, Activity::Waiting | Activity::Notification) {
@@ -71,6 +79,13 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         }
     } else {
         state.flash_deadlines.remove(&payload.pane_id);
+    }
+
+    // Track Suspending start time
+    if matches!(activity, Activity::Suspending) {
+        session.suspending_started_at = Some(crate::state::unix_now());
+    } else {
+        session.suspending_started_at = None;
     }
 
     session.activity = activity;

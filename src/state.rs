@@ -19,6 +19,7 @@ pub fn unix_now_ms() -> u64 {
 }
 
 pub const FLASH_DURATION_MS: u64 = 2000;
+pub const SUSPENDING_TIMEOUT: u64 = 15;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Activity {
@@ -28,6 +29,7 @@ pub enum Activity {
     Prompting,
     Waiting,
     Notification,
+    Suspending,
     Done,
     AgentDone,
     Idle,
@@ -42,6 +44,7 @@ pub struct SessionInfo {
     pub tab_index: Option<usize>,
     pub last_event_ts: u64,
     pub cwd: Option<String>,
+    pub suspending_started_at: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

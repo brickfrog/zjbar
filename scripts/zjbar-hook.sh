@@ -5,6 +5,10 @@
 # Usage in ~/.claude/settings.json hooks:
 #   "command": "/path/to/zjbar-hook.sh"
 
+# Debug logging: set ZJBAR_DEBUG=1 to log all hook events with timestamps
+# Logs to /tmp/zjbar-debug-<pane_id>.log
+ZJBAR_DEBUG="${ZJBAR_DEBUG:-0}"
+
 # Exit silently if not running inside Zellij
 [ -z "$ZELLIJ_SESSION_NAME" ] && exit 0
 [ -z "$ZELLIJ_PANE_ID" ] && exit 0
@@ -30,6 +34,20 @@ eval "$(echo "$INPUT" | jq -r '
 
 [ -z "$HOOK_EVENT" ] && exit 0
 
+# Debug: log raw event with millisecond timestamp
+if [ "$ZJBAR_DEBUG" = "1" ]; then
+  _TS=$(python3 -c 'import time; print(f"{time.time():.3f}")' 2>/dev/null || date +%s)
+  _EXTRA=""
+  [ -n "$TOOL_NAME" ] && _EXTRA=" tool=$TOOL_NAME"
+  [ -n "$NOTIF_TYPE" ] && _EXTRA="$_EXTRA notif_type=$NOTIF_TYPE"
+  [ -n "$AGENT_ID" ] && _EXTRA="$_EXTRA agent_id=$AGENT_ID"
+  echo "${_TS} pane=${ZELLIJ_PANE_ID} event=${HOOK_EVENT}${_EXTRA}" \
+    >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
+  # Log complete raw JSON payload to separate file
+  echo "${_TS} pane=${ZELLIJ_PANE_ID} RAW_PAYLOAD: ${INPUT}" \
+    >> "/tmp/zjbar-debug-raw-${ZELLIJ_PANE_ID}.log"
+fi
+
 # Skip noise notification types that shouldn't affect the status bar.
 # auth_success fires on every startup (login/auth) and would trigger
 # flash animation on the tab. permission_prompt duplicates the
@@ -44,15 +62,36 @@ fi
 # When a hook fires inside a subagent, Claude Code includes an `agent_id`
 # field in the JSON payload.  We don't want subagent tool-use, thinking,
 # or completion events to update the status bar or trigger notifications.
-[ -n "$AGENT_ID" ] && exit 0
+# Exception: SubagentStop is forwarded so Rust can transition Suspending → Done.
+if [ -n "$AGENT_ID" ] && [ "$HOOK_EVENT" != "SubagentStop" ]; then
+  exit 0
+fi
+
+# SubagentStop: forward to Rust as-is (it checks Suspending state),
+# but treat it as "Stop" for desktop notification purposes.
+NOTIFY_AS_EVENT="$HOOK_EVENT"
+if [ "$HOOK_EVENT" = "SubagentStop" ]; then
+  NOTIFY_AS_EVENT="Stop"
+  if [ "$ZJBAR_DEBUG" = "1" ]; then
+    _TS=$(python3 -c 'import time; print(f"{time.time():.3f}")' 2>/dev/null || date +%s)
+    echo "${_TS} pane=${ZELLIJ_PANE_ID} SubagentStop received, notify as Stop" \
+      >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
+  fi
+fi
 
 # CodeBuddy compatibility:
 # CodeBuddy doesn't fire Stop events. Instead it sends a Notification
 # with notification_type="idle_prompt" when the session becomes idle.
-# Map this to a Stop event so zjbar shows the correct ✅ Done state
-# and can extract a transcript summary for the desktop notification.
+# Map to Suspending (not Stop) so we wait for SubagentStop before
+# triggering the desktop notification.  If no SubagentStop arrives
+# within SUSPENDING_TIMEOUT (15s), the Rust timer auto-promotes to Done.
 if [ "$HOOK_EVENT" = "Notification" ] && [ "$NOTIF_TYPE" = "idle_prompt" ]; then
-  HOOK_EVENT="Stop"
+  HOOK_EVENT="Suspending"
+  if [ "$ZJBAR_DEBUG" = "1" ]; then
+    _TS=$(python3 -c 'import time; print(f"{time.time():.3f}")' 2>/dev/null || date +%s)
+    echo "${_TS} pane=${ZELLIJ_PANE_ID} MAPPED idle_prompt → Suspending" \
+      >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
+  fi
 fi
 
 # Build compact JSON payload
@@ -222,9 +261,10 @@ if [ -f "$SETTINGS_FILE" ]; then
 fi
 
 # Check if current event is in the notify list
+# Use NOTIFY_AS_EVENT (which maps SubagentStop→Stop) for notification matching.
 IS_NOTIFY_EVENT=false
 for EVT in $NOTIFY_EVENTS; do
-  [ "$HOOK_EVENT" = "$EVT" ] && {
+  [ "$NOTIFY_AS_EVENT" = "$EVT" ] && {
     IS_NOTIFY_EVENT=true
     break
   }
@@ -232,7 +272,7 @@ done
 
 if [ "$IS_NOTIFY_EVENT" = true ]; then
   # Bell for PermissionRequest
-  [ "$HOOK_EVENT" = "PermissionRequest" ] && printf '\a' >/dev/tty 2>/dev/null || true
+  [ "$NOTIFY_AS_EVENT" = "PermissionRequest" ] && printf '\a' >/dev/tty 2>/dev/null || true
 
   # Detect app variant: check CLAUDE_SETTINGS_DIR or CodeBuddy-specific env vars
   APP_NAME="Claude Code"
@@ -242,10 +282,10 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ICON_FILE="codebuddy-logo.png"
   fi
 
-  SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$HOOK_EVENT")
+  SUMMARY=$(extract_summary "$TRANSCRIPT_PATH" "$NOTIFY_AS_EVENT")
 
   # Build notification title and message per event type
-  case "$HOOK_EVENT" in
+  case "$NOTIFY_AS_EVENT" in
   Stop)
     TITLE="✅ $APP_NAME"
     if [ -n "$SUMMARY" ]; then
@@ -280,7 +320,7 @@ if [ "$IS_NOTIFY_EVENT" = true ]; then
     ;;
   *)
     TITLE="$APP_NAME"
-    MESSAGE="Event: $HOOK_EVENT"
+    MESSAGE="Event: $NOTIFY_AS_EVENT"
     ;;
   esac
 

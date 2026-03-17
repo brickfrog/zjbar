@@ -251,6 +251,7 @@ impl BarConfig {
             Activity::Prompting => self.activity_prompt_color,
             Activity::Waiting => self.activity_waiting_color,
             Activity::Notification => self.activity_waiting_color,
+            Activity::Suspending => self.activity_thinking_color,
             Activity::Done => self.activity_done_color,
             Activity::AgentDone => self.activity_done_color,
             Activity::Idle => self.tab_separator_fg, // dim
