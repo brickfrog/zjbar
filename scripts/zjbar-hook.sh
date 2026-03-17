@@ -76,6 +76,35 @@ PAYLOAD=$(jq -nc \
     term_program: (if $term_program == "" then null else $term_program end)
   }')
 
+# -- Transcript path fallback --
+# When transcript_path is not provided (e.g. CodeBuddy idle_prompt),
+# attempt to locate it from session_id and cwd.
+# Layout: ~/.codebuddy/projects/<slug>/<session_id>.jsonl  (CodeBuddy)
+#         ~/.claude/projects/-<slug>/<session_id>.jsonl     (Claude Code)
+resolve_transcript_path() {
+  local session="$1" cwd="$2"
+  [ -z "$session" ] || [ -z "$cwd" ] && return
+
+  # Convert /Users/roc/dev/zjbar → Users-roc-dev-zjbar
+  local slug
+  slug=$(echo "$cwd" | sed 's|^/||; s|/|-|g')
+
+  # Try CodeBuddy first, then Claude Code
+  local candidate
+  for candidate in \
+    "$HOME/.codebuddy/projects/${slug}/${session}.jsonl" \
+    "$HOME/.claude/projects/-${slug}/${session}.jsonl"; do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return
+    fi
+  done
+}
+
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+  TRANSCRIPT_PATH=$(resolve_transcript_path "$SESSION_ID" "$CWD")
+fi
+
 # -- Transcript summary extraction --
 # Extract a concise summary from the JSONL transcript.
 # Supports both Claude Code and CodeBuddy transcript formats:
