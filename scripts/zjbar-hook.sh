@@ -27,21 +27,18 @@ INPUT=$(cat)
 # Resolve plugin root: CodeBuddy uses CODEBUDDY_PLUGIN_ROOT, Claude Code uses CLAUDE_PLUGIN_ROOT
 PLUGIN_ROOT="${CODEBUDDY_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 
-# Extract fields from JSON.
-# Structured ID/path fields are safe to join with tab; free-text fields
-# (message, title) are extracted separately to avoid delimiter issues.
-_FIELDS=$(echo "$INPUT" | jq -r '[
-  .hook_event_name // "",
-  .session_id // "",
-  .tool_name // "",
-  .cwd // "",
-  .transcript_path // "",
-  .notification_type // "",
-  .agent_id // ""
-] | join("\t")') || exit 0
-
-IFS=$'\t' read -r HOOK_EVENT SESSION_ID TOOL_NAME CWD TRANSCRIPT_PATH \
-  NOTIF_TYPE AGENT_ID <<< "$_FIELDS"
+# Extract fields from JSON in a single jq call.
+# NOTE: Do NOT use tab-join + IFS read — bash `read` collapses consecutive
+# tab delimiters, causing field misalignment when middle fields are empty.
+# Instead, extract each field individually. The overhead of multiple jq calls
+# is negligible compared to the zellij pipe command that follows.
+HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty') || exit 0
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
+NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // ""')
+AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // ""')
 NOTIF_MESSAGE=$(echo "$INPUT" | jq -r '.message // ""')
 NOTIF_TITLE=$(echo "$INPUT" | jq -r '.title // ""')
 
