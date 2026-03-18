@@ -3,6 +3,30 @@ tab_template name="ui" {
    pane size=1 borderless=true {}
 }
 
+swap_tiled_layout name="ai" {
+    ui max_panes=1 {
+        pane
+    }
+    ui max_panes=2 {
+        pane split_direction="vertical" {
+            pane size="80%"
+            pane size="20%"
+        }
+    }
+    ui max_panes=5 {
+        pane split_direction="vertical" {
+            pane size="80%" { children; }
+            pane size="20%"
+        }
+    }
+    ui max_panes=9 {
+        pane split_direction="vertical" {
+            pane size="80%" { children; }
+            pane size="20%"
+        }
+    }
+}
+
 swap_tiled_layout name="vertical" {
     ui max_panes=4 {
         pane split_direction="vertical" {
