@@ -67,7 +67,7 @@ fi
 # PermissionRequest event.
 if [ "$HOOK_EVENT" = "Notification" ]; then
   case "$NOTIF_TYPE" in
-  auth_success | permission_prompt) exit 0 ;;
+  auth_success | permission_prompt | idle_prompt) exit 0 ;;
   esac
 fi
 
@@ -75,37 +75,11 @@ fi
 # When a hook fires inside a subagent, Claude Code includes an `agent_id`
 # field in the JSON payload.  We don't want subagent tool-use, thinking,
 # or completion events to update the status bar or trigger notifications.
-# Exception: SubagentStop is forwarded so Rust can transition Suspending → Done.
-if [ -n "$AGENT_ID" ] && [ "$HOOK_EVENT" != "SubagentStop" ]; then
+if [ -n "$AGENT_ID" ]; then
   exit 0
 fi
 
-# SubagentStop: forward to Rust as-is (it checks Suspending state),
-# but treat it as "Stop" for desktop notification purposes.
 NOTIFY_AS_EVENT="$HOOK_EVENT"
-if [ "$HOOK_EVENT" = "SubagentStop" ]; then
-  NOTIFY_AS_EVENT="Stop"
-  if [ "$ZJBAR_DEBUG" = "1" ]; then
-    _TS=$(python3 -c 'import time; print(f"{time.time():.3f}")' 2>/dev/null || date +%s)
-    echo "${_TS} pane=${ZELLIJ_PANE_ID} SubagentStop received, notify as Stop" \
-      >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
-  fi
-fi
-
-# CodeBuddy compatibility:
-# CodeBuddy doesn't fire Stop events. Instead it sends a Notification
-# with notification_type="idle_prompt" when the session becomes idle.
-# Map to Suspending (not Stop) so we wait for SubagentStop before
-# triggering the desktop notification.  If no SubagentStop arrives
-# within SUSPENDING_TIMEOUT (15s), the Rust timer auto-promotes to Done.
-if [ "$HOOK_EVENT" = "Notification" ] && [ "$NOTIF_TYPE" = "idle_prompt" ]; then
-  HOOK_EVENT="Suspending"
-  if [ "$ZJBAR_DEBUG" = "1" ]; then
-    _TS=$(python3 -c 'import time; print(f"{time.time():.3f}")' 2>/dev/null || date +%s)
-    echo "${_TS} pane=${ZELLIJ_PANE_ID} MAPPED idle_prompt → Suspending" \
-      >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
-  fi
-fi
 
 # Build compact JSON payload
 PAYLOAD=$(jq -nc \
@@ -169,19 +143,26 @@ extract_summary() {
 
   case "$event" in
   Stop)
-    # Get last assistant message text, clean markdown, truncate
+    # Get last assistant message text, clean markdown, truncate.
+    # Retry up to 3 times with short delay to handle race condition
+    # where the Stop hook fires before the transcript is fully written.
     # Handles both Claude Code (.type=="assistant" → .message.content[].text)
     # and CodeBuddy (.type=="message" + .role=="assistant" → .content[].text)
-    local text
-    text=$(tail -100 "$transcript" |
-      jq -r '
-        if .type == "assistant" then
-          .message.content[]? | select(.type == "text") | .text
-        elif (.type == "message" and .role == "assistant") then
-          .content[]? | select(.type == "text" or .type == "output_text") | .text
-        else empty end
-      ' 2>/dev/null |
-      tail -1)
+    local text retries=0
+    while [ $retries -lt 3 ]; do
+      text=$(tail -100 "$transcript" |
+        jq -r '
+          if .type == "assistant" then
+            .message.content[]? | select(.type == "text") | .text
+          elif (.type == "message" and .role == "assistant") then
+            .content[]? | select(.type == "text" or .type == "output_text") | .text
+          else empty end
+        ' 2>/dev/null |
+        tail -1)
+      [ -n "$text" ] && break
+      retries=$((retries + 1))
+      sleep 0.1
+    done
     [ -z "$text" ] && return
     text=$(zjbar_clean_and_truncate "$text")
     # Count tool usage in recent messages
