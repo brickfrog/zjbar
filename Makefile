@@ -4,6 +4,9 @@ WASM       := target/wasm32-wasip1/release/zjbar.wasm
 TAG        := $(shell git describe --tags --exact-match 2>/dev/null)
 CUR_VER    := $(shell grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
 
+# Portable in-place sed: GNU sed uses -i (no arg), BSD/macOS sed uses -i ''.
+SED_I      := $(shell sed --version >/dev/null 2>&1 && echo 'sed -i' || echo 'sed -i ""')
+
 .PHONY: build install install-layouts install-codex-hooks uninstall-codex-hooks install-gemini-hooks uninstall-gemini-hooks uninstall clean bump release
 
 build:
@@ -49,15 +52,15 @@ bump:
 	fi
 	@echo "Bumping $(CUR_VER) → $(V) ..."
 	@# 1. Cargo.toml
-	sed -i '' 's/^version = "$(CUR_VER)"/version = "$(V)"/' Cargo.toml
+	$(SED_I) 's/^version = "$(CUR_VER)"/version = "$(V)"/' Cargo.toml
 	@# 2-3. README WASM download URLs
-	sed -i '' 's|releases/download/v$(CUR_VER)/zjbar.wasm|releases/download/v$(V)/zjbar.wasm|' README.md README.zh-CN.md
+	$(SED_I) 's|releases/download/v$(CUR_VER)/zjbar.wasm|releases/download/v$(V)/zjbar.wasm|' README.md README.zh-CN.md
 	@# 4. .claude-plugin/marketplace.json (both version fields)
-	sed -i '' 's/"$(CUR_VER)"/"$(V)"/g' .claude-plugin/marketplace.json
+	$(SED_I) 's/"$(CUR_VER)"/"$(V)"/g' .claude-plugin/marketplace.json
 	@# 5. .claude-plugin/plugin.json
-	sed -i '' 's/"$(CUR_VER)"/"$(V)"/' .claude-plugin/plugin.json
+	$(SED_I) 's/"$(CUR_VER)"/"$(V)"/' .claude-plugin/plugin.json
 	@# 6. opencode-plugin/package.json
-	sed -i '' 's/"version": "$(CUR_VER)"/"version": "$(V)"/' opencode-plugin/package.json
+	$(SED_I) 's/"version": "$(CUR_VER)"/"version": "$(V)"/' opencode-plugin/package.json
 	@# 7. Build to update Cargo.lock
 	cargo build --release
 	@# Verify no stale references remain
