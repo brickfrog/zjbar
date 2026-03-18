@@ -14,7 +14,10 @@ ZJBAR_DEBUG="${ZJBAR_DEBUG:-0}"
 [ -z "$ZELLIJ_PANE_ID" ] && exit 0
 
 # Require jq for JSON parsing
-command -v jq >/dev/null 2>&1 || { echo "zjbar: jq is required but not found" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || {
+  echo "zjbar: jq is required but not found" >&2
+  exit 1
+}
 
 # Source shared library
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -52,10 +55,10 @@ if [ "$ZJBAR_DEBUG" = "1" ]; then
   [ -n "$NOTIF_TYPE" ] && _EXTRA="$_EXTRA notif_type=$NOTIF_TYPE"
   [ -n "$AGENT_ID" ] && _EXTRA="$_EXTRA agent_id=$AGENT_ID"
   echo "${_TS} pane=${ZELLIJ_PANE_ID} event=${HOOK_EVENT}${_EXTRA}" \
-    >> "/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
+    >>"/tmp/zjbar-debug-${ZELLIJ_PANE_ID}.log"
   # Log complete raw JSON payload to separate file
   echo "${_TS} pane=${ZELLIJ_PANE_ID} RAW_PAYLOAD: ${INPUT}" \
-    >> "/tmp/zjbar-debug-raw-${ZELLIJ_PANE_ID}.log"
+    >>"/tmp/zjbar-debug-raw-${ZELLIJ_PANE_ID}.log"
 fi
 
 # Skip noise notification types that shouldn't affect the status bar.
@@ -77,6 +80,25 @@ if [ -n "$AGENT_ID" ]; then
 fi
 
 NOTIFY_AS_EVENT="$HOOK_EVENT"
+
+# -- Stop notification debounce (CodeBuddy only) --
+# CodeBuddy fires a Stop event after every API turn, but a single user request
+# may span multiple turns (e.g. agent researches then continues working).
+# To avoid spurious "task completed" notifications mid-task, we debounce:
+#   - Non-Stop events cancel any pending Stop notification
+#   - Stop notifications are delayed 5 seconds; if a new event arrives
+#     before the timer fires, the notification is suppressed.
+# Claude Code does NOT have this problem — Stop means task is truly done.
+# The status bar icon update is NOT debounced — only the desktop notification.
+# Detection: CODEBUDDY_PROJECT_DIR is set only when running under CodeBuddy.
+IS_CODEBUDDY="${CODEBUDDY_PROJECT_DIR:+1}"
+ZJBAR_STOP_DEBOUNCE=5
+PENDING_NOTIFY_FILE="/tmp/zjbar-pending-notify-${ZELLIJ_PANE_ID}"
+
+# Cancel any pending Stop notification when a new event arrives (CodeBuddy only)
+if [ -n "$IS_CODEBUDDY" ] && [ "$HOOK_EVENT" != "Stop" ]; then
+  rm -f "$PENDING_NOTIFY_FILE" 2>/dev/null
+fi
 
 # Build compact JSON payload
 PAYLOAD=$(jq -nc \
@@ -269,7 +291,25 @@ if zjbar_is_notify_event "$NOTIFY_AS_EVENT"; then
   esac
 
   if zjbar_check_should_notify; then
-    zjbar_send_notification "$TITLE" "$MESSAGE" "${PLUGIN_ROOT}/assets" "$ICON_FILE"
+    if [ -n "$IS_CODEBUDDY" ] && [ "$NOTIFY_AS_EVENT" = "Stop" ]; then
+      # CodeBuddy only: debounce Stop notifications.
+      # Write pending file and schedule delivery after delay.
+      # A subsequent non-Stop event will delete the file, cancelling the notification.
+      # Use a unique token so stale pending files from previous Stops don't fire.
+      DEBOUNCE_TOKEN="$$-$(date +%s)"
+      echo "$DEBOUNCE_TOKEN" >"$PENDING_NOTIFY_FILE"
+      (
+        sleep "$ZJBAR_STOP_DEBOUNCE"
+        # Only send if our token is still the current pending notification
+        if [ -f "$PENDING_NOTIFY_FILE" ] && [ "$(cat "$PENDING_NOTIFY_FILE" 2>/dev/null)" = "$DEBOUNCE_TOKEN" ]; then
+          rm -f "$PENDING_NOTIFY_FILE"
+          zjbar_send_notification "$TITLE" "$MESSAGE" "${PLUGIN_ROOT}/assets" "$ICON_FILE"
+        fi
+      ) &
+    else
+      # Claude Code or non-Stop events: send notification immediately
+      zjbar_send_notification "$TITLE" "$MESSAGE" "${PLUGIN_ROOT}/assets" "$ICON_FILE"
+    fi
   fi
 fi
 
