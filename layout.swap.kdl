@@ -9,20 +9,20 @@ swap_tiled_layout name="ai" {
     }
     ui max_panes=2 {
         pane split_direction="vertical" {
-            pane size="80%"
-            pane size="20%"
+            pane size="75%"
+            pane size="25%"
         }
     }
     ui max_panes=5 {
         pane split_direction="vertical" {
-            pane size="80%" { children; }
-            pane size="20%"
+            pane size="75%" { children; }
+            pane size="25%"
         }
     }
     ui max_panes=9 {
         pane split_direction="vertical" {
-            pane size="80%" { children; }
-            pane size="20%"
+            pane size="75%" { children; }
+            pane size="25%"
         }
     }
 }
