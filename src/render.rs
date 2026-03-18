@@ -383,6 +383,157 @@ fn render_settings_menu(
     });
 }
 
+/// Render a single tab segment (index + name + indicators + arrows).
+/// Returns `(region_start, region_end)` column range for click registration.
+fn render_single_tab(
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    cfg: &crate::config::BarConfig,
+    tab: &TabInfo,
+    info: &TabRenderInfo,
+    max_name_len: usize,
+    sep_left_width: usize,
+    sep_tab_width: usize,
+) -> (usize, usize) {
+    let is_active = tab.active;
+    let is_flash_bright = info.is_flash_bright;
+
+    // Tab colors
+    let tab_bg = if is_flash_bright {
+        cfg.flash_bg
+    } else if is_active {
+        cfg.tab_active_bg
+    } else {
+        cfg.tab_inactive_bg
+    };
+
+    let tab_fg = if is_flash_bright {
+        cfg.flash_fg
+    } else if is_active {
+        cfg.tab_active_fg
+    } else {
+        cfg.tab_inactive_fg
+    };
+
+    // Compute name truncation parameters (no allocation)
+    let char_count = tab.name.chars().count();
+    let (name_chars, needs_ellipsis) = if max_name_len == 0 {
+        (0, false)
+    } else if char_count > max_name_len {
+        (max_name_len.saturating_sub(1), true)
+    } else {
+        (char_count, false)
+    };
+
+    let region_start = *col;
+
+    // Determine index colors (active tabs get a highlighted index)
+    let (idx_bg, idx_fg) = if is_flash_bright {
+        (cfg.flash_bg, cfg.flash_fg)
+    } else if is_active {
+        (cfg.tab_active_index_bg, cfg.tab_active_index_fg)
+    } else {
+        (tab_bg, tab_fg)
+    };
+
+    // Leading arrow: [bar_bg → idx_bg]
+    write_fg!(buf, cfg.bar_bg);
+    write_bg!(buf, idx_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    // Index part: " N "
+    let idx_num = tab.position + 1;
+    write_bg!(buf, idx_bg);
+    write_fg!(buf, idx_fg);
+    let _ = write!(buf, "{BOLD} {idx_num} {RESET}");
+    *col += 1 + digit_count(idx_num) + 1;
+
+    // Transition from index to name area
+    if is_active && !is_flash_bright {
+        // Powerline arrow: idx_bg → tab_bg
+        write_fg!(buf, idx_bg);
+        write_bg!(buf, tab_bg);
+        let _ = write!(buf, "{}", cfg.separator_left);
+        *col += sep_left_width;
+    } else {
+        // Thin separator (same bg)
+        write_bg!(buf, tab_bg);
+        write_fg!(buf, cfg.tab_separator_fg);
+        let _ = write!(buf, "{}", cfg.separator_tab);
+        *col += sep_tab_width;
+    }
+
+    // Name part: " name "
+    write_bg!(buf, tab_bg);
+    write_fg!(buf, tab_fg);
+    let _ = write!(buf, "{BOLD} ");
+    *col += 1;
+
+    if name_chars > 0 {
+        for c in tab.name.chars().take(name_chars) {
+            buf.push(c);
+            *col += char_width(c);
+        }
+        if needs_ellipsis {
+            buf.push('\u{2026}');
+            *col += 1;
+        }
+    }
+
+    // Fullscreen / floating indicators
+    if tab.is_fullscreen_active {
+        let ind = &cfg.tab_fullscreen_indicator;
+        let _ = write!(buf, "{ind}");
+        *col += display_width(ind);
+    }
+    if tab.are_floating_panes_visible {
+        let ind = &cfg.tab_floating_indicator;
+        let _ = write!(buf, "{ind}");
+        *col += display_width(ind);
+    }
+
+    // Activity indicator
+    if let Some(ref activity) = info.best_activity {
+        if !matches!(activity, Activity::Idle) {
+            let symbol = activity_symbol(activity);
+            let icon_color = if is_flash_bright {
+                cfg.flash_fg
+            } else {
+                cfg.activity_color(activity)
+            };
+            let _ = write!(buf, " {RESET}");
+            write_bg!(buf, tab_bg);
+            write_fg!(buf, icon_color);
+            let _ = write!(buf, "{symbol}");
+            *col += 1 + display_width(symbol);
+        }
+
+        if let Some(ref es) = info.elapsed_str {
+            if *col + 1 + es.len() + 1 < cols {
+                let _ = write!(buf, " {RESET}");
+                write_bg!(buf, tab_bg);
+                write_fg!(buf, cfg.elapsed_fg);
+                let _ = write!(buf, "{es}");
+                *col += 1 + es.len();
+            }
+        }
+    }
+
+    // Trailing space + closing arrow
+    let _ = write!(buf, "{RESET}");
+    write_bg!(buf, tab_bg);
+    let _ = write!(buf, " ");
+    *col += 1;
+    write_fg!(buf, tab_bg);
+    write_bg!(buf, cfg.bar_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    (region_start, *col)
+}
+
 fn render_tabs(
     state: &mut State,
     buf: &mut String,
@@ -442,147 +593,13 @@ fn render_tabs(
         }
 
         let info = &tab_infos[i];
-        let is_active = tab.active;
-        let tab_name = &tab.name;
+        let (region_start, region_end) = render_single_tab(
+            buf, col, cols, cfg, tab, info, max_name_len, sep_left_width, sep_tab_width,
+        );
 
-        let is_flash_bright = info.is_flash_bright;
-
-        // Tab colors
-        let tab_bg = if is_flash_bright {
-            cfg.flash_bg
-        } else if is_active {
-            cfg.tab_active_bg
-        } else {
-            cfg.tab_inactive_bg
-        };
-
-        let tab_fg = if is_flash_bright {
-            cfg.flash_fg
-        } else if is_active {
-            cfg.tab_active_fg
-        } else {
-            cfg.tab_inactive_fg
-        };
-
-        // Compute name truncation parameters (no allocation)
-        let char_count = tab_name.chars().count();
-        let (name_chars, needs_ellipsis) = if max_name_len == 0 {
-            (0, false)
-        } else if char_count > max_name_len {
-            (max_name_len.saturating_sub(1), true)
-        } else {
-            (char_count, false)
-        };
-
-        let region_start = *col;
-
-        // Determine index colors (active tabs get a highlighted index)
-        let (idx_bg, idx_fg) = if is_flash_bright {
-            (cfg.flash_bg, cfg.flash_fg)
-        } else if is_active {
-            (cfg.tab_active_index_bg, cfg.tab_active_index_fg)
-        } else {
-            (tab_bg, tab_fg)
-        };
-
-        // Leading arrow: [bar_bg → idx_bg]
-        write_fg!(buf, cfg.bar_bg);
-        write_bg!(buf, idx_bg);
-        let _ = write!(buf, "{}", cfg.separator_left);
-        *col += sep_left_width;
-
-        // Index part: " N "
-        let idx_num = tab.position + 1;
-        write_bg!(buf, idx_bg);
-        write_fg!(buf, idx_fg);
-        let _ = write!(buf, "{BOLD} {idx_num} {RESET}");
-        *col += 1 + digit_count(idx_num) + 1;
-
-        // Transition from index to name area
-        if is_active && !is_flash_bright {
-            // Powerline arrow: idx_bg → tab_bg
-            write_fg!(buf, idx_bg);
-            write_bg!(buf, tab_bg);
-            let _ = write!(buf, "{}", cfg.separator_left);
-            *col += sep_left_width;
-        } else {
-            // Thin separator (same bg)
-            write_bg!(buf, tab_bg);
-            write_fg!(buf, cfg.tab_separator_fg);
-            let _ = write!(buf, "{}", cfg.separator_tab);
-            *col += sep_tab_width;
-        }
-
-        // Name part: " name "
-        write_bg!(buf, tab_bg);
-        write_fg!(buf, tab_fg);
-        let _ = write!(buf, "{BOLD} ");
-        *col += 1;
-
-        if name_chars > 0 {
-            for c in tab_name.chars().take(name_chars) {
-                buf.push(c);
-                *col += char_width(c);
-            }
-            if needs_ellipsis {
-                buf.push('\u{2026}');
-                *col += 1;
-            }
-        }
-
-        // Fullscreen / floating indicators
-        if tab.is_fullscreen_active {
-            let ind = &cfg.tab_fullscreen_indicator;
-            let _ = write!(buf, "{ind}");
-            *col += display_width(ind);
-        }
-        if tab.are_floating_panes_visible {
-            let ind = &cfg.tab_floating_indicator;
-            let _ = write!(buf, "{ind}");
-            *col += display_width(ind);
-        }
-
-        // Claude activity indicator
-        if let Some(ref activity) = info.best_activity {
-            if !matches!(activity, Activity::Idle) {
-                let symbol = activity_symbol(activity);
-                let icon_color = if is_flash_bright {
-                    cfg.flash_fg
-                } else {
-                    cfg.activity_color(activity)
-                };
-                let _ = write!(buf, " {RESET}");
-                write_bg!(buf, tab_bg);
-                write_fg!(buf, icon_color);
-                let _ = write!(buf, "{symbol}");
-                *col += 1 + display_width(symbol);
-            }
-
-            if let Some(ref es) = info.elapsed_str {
-                if *col + 1 + es.len() + 1 < cols {
-                    let _ = write!(buf, " {RESET}");
-                    write_bg!(buf, tab_bg);
-                    write_fg!(buf, cfg.elapsed_fg);
-                    let _ = write!(buf, "{es}");
-                    *col += 1 + es.len();
-                }
-            }
-        }
-
-        // Trailing space + closing arrow
-        let _ = write!(buf, "{RESET}");
-        write_bg!(buf, tab_bg);
-        let _ = write!(buf, " ");
-        *col += 1;
-        write_fg!(buf, tab_bg);
-        write_bg!(buf, cfg.bar_bg);
-        let _ = write!(buf, "{}", cfg.separator_left);
-        *col += sep_left_width;
-
-        // Register click region
         state.click_regions.push(ClickRegion {
             start_col: region_start,
-            end_col: *col,
+            end_col: region_end,
             tab_index: tab.position,
             pane_id: info.waiting_pane_id.unwrap_or(0),
             is_waiting: info.waiting_pane_id.is_some(),
