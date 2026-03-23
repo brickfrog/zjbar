@@ -409,3 +409,137 @@ impl State {
         run_command(&["sh", "-c", &cmd], ctx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use state::Activity;
+
+    fn make_session(pane_id: u32, activity: Activity, ts: u64) -> SessionInfo {
+        SessionInfo {
+            session_id: format!("session-{pane_id}"),
+            pane_id,
+            activity,
+            tab_name: None,
+            tab_index: None,
+            last_event_ts: ts,
+            cwd: None,
+        }
+    }
+
+    #[test]
+    fn test_merge_sessions_new_entry() {
+        let mut state = State::default();
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Thinking, 100));
+        state.merge_sessions(incoming);
+
+        let session = state.sessions.get(&1).expect("session should exist");
+        assert_eq!(session.activity, Activity::Thinking);
+        assert_eq!(session.last_event_ts, 100);
+    }
+
+    #[test]
+    fn test_merge_sessions_newer_wins() {
+        let mut state = State::default();
+        state.sessions.insert(1, make_session(1, Activity::Thinking, 100));
+
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Done, 200));
+        state.merge_sessions(incoming);
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Done);
+        assert_eq!(session.last_event_ts, 200);
+    }
+
+    #[test]
+    fn test_merge_sessions_older_loses() {
+        let mut state = State::default();
+        state.sessions.insert(1, make_session(1, Activity::Done, 200));
+
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Thinking, 100));
+        state.merge_sessions(incoming);
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Done);
+        assert_eq!(session.last_event_ts, 200);
+    }
+
+    #[test]
+    fn test_merge_sessions_equal_timestamp_replaces() {
+        let mut state = State::default();
+        state.sessions.insert(1, make_session(1, Activity::Thinking, 100));
+
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Done, 100));
+        state.merge_sessions(incoming);
+
+        // Equal timestamp: incoming wins (>= comparison)
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Done);
+    }
+
+    #[test]
+    fn test_merge_sessions_applies_pane_to_tab() {
+        let mut state = State::default();
+        state.pane_to_tab.insert(1, (0, "Tab 1".into()));
+
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Thinking, 100));
+        state.merge_sessions(incoming);
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.tab_index, Some(0));
+        assert_eq!(session.tab_name, Some("Tab 1".into()));
+    }
+
+    #[test]
+    fn test_merge_sessions_multiple_panes() {
+        let mut state = State::default();
+        let mut incoming = BTreeMap::new();
+        incoming.insert(1, make_session(1, Activity::Thinking, 100));
+        incoming.insert(2, make_session(2, Activity::Done, 200));
+        state.merge_sessions(incoming);
+
+        assert!(state.sessions.get(&1).is_some());
+        assert!(state.sessions.get(&2).is_some());
+    }
+
+    #[test]
+    fn test_sessions_round_trip_serialization() {
+        let mut sessions = BTreeMap::new();
+        sessions.insert(1, make_session(1, Activity::Thinking, 100));
+        sessions.insert(2, make_session(2, Activity::Done, 200));
+
+        let json = serde_json::to_string(&sessions).unwrap();
+        let deserialized: BTreeMap<u32, SessionInfo> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.len(), 2);
+        assert_eq!(deserialized.get(&1).unwrap().activity, Activity::Thinking);
+        assert_eq!(deserialized.get(&1).unwrap().last_event_ts, 100);
+        assert_eq!(deserialized.get(&2).unwrap().activity, Activity::Done);
+        assert_eq!(deserialized.get(&2).unwrap().last_event_ts, 200);
+    }
+
+    #[test]
+    fn test_sessions_round_trip_with_all_activity_types() {
+        let mut sessions = BTreeMap::new();
+        sessions.insert(1, make_session(1, Activity::Init, 10));
+        sessions.insert(2, make_session(2, Activity::Thinking, 20));
+        sessions.insert(3, make_session(3, Activity::Tool("Bash".into()), 30));
+        sessions.insert(4, make_session(4, Activity::Done, 40));
+        sessions.insert(5, make_session(5, Activity::Idle, 50));
+
+        let json = serde_json::to_string(&sessions).unwrap();
+        let deserialized: BTreeMap<u32, SessionInfo> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.len(), 5);
+        assert_eq!(deserialized.get(&1).unwrap().activity, Activity::Init);
+        assert_eq!(deserialized.get(&2).unwrap().activity, Activity::Thinking);
+        assert_eq!(deserialized.get(&3).unwrap().activity, Activity::Tool("Bash".into()));
+        assert_eq!(deserialized.get(&4).unwrap().activity, Activity::Done);
+        assert_eq!(deserialized.get(&5).unwrap().activity, Activity::Idle);
+    }
+}

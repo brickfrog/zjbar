@@ -240,6 +240,9 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
   // Exit silently if not running inside Zellij
   if (!zellijSession || !paneId) return {};
 
+  const numericPaneId = parseInt(paneId, 10);
+  if (isNaN(numericPaneId) || numericPaneId < 0) return {};
+
   const local = isLocalPlugin();
   const instanceId = `${local ? "local" : "global"}:${crypto.randomUUID()}`;
 
@@ -275,7 +278,7 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
 
     const payload = JSON.stringify({
       source: "opencode",
-      pane_id: parseInt(paneId!, 10),
+      pane_id: numericPaneId,
       session_id: sessionId,
       hook_event: hookEvent,
       tool_name: toolName || null,
@@ -287,7 +290,7 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     // Use resolved absolute path to avoid PATH issues in spawned child
     const child = spawn(zellijBin, [
       "-s",
-      zellijSession!,
+      zellijSession,
       "pipe",
       "--name",
       "zjbar",
@@ -297,8 +300,8 @@ export const ZjbarPlugin: Plugin = async ({ directory, client }) => {
     child.unref();
 
     // Desktop notifications for key events
-    if (!skipDesktop && shouldNotify(hookEvent, paneId!, termProgram)) {
-      sendNotification(hookEvent, paneId!, zellijSession!, termProgram, summary);
+    if (!skipDesktop && shouldNotify(hookEvent, paneId, termProgram)) {
+      sendNotification(hookEvent, paneId, zellijSession, termProgram, summary);
     }
   }
 
