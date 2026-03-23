@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-23T05:20:06.164Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-23T06:25:03Z"
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2025-03-20)
 
 **Core value:** 在不改变现有功能行为的前提下，让代码更可靠、更可维护、更易测试
-**Current focus:** Phase 03 — testing and TS improvements
+**Current focus:** Phase 03 — ts
 
 ## Current Position
 
-Phase: 02 (shell-script-hardening) — COMPLETE
-Plan: 2 of 2 (done)
+Phase: 03 (ts) — COMPLETE
+Plan: 2 of 2 (all complete)
 
 ## Performance Metrics
 
@@ -50,6 +50,8 @@ Plan: 2 of 2 (done)
 | Phase 01 P02 | 8min | 2 tasks | 3 files |
 | Phase 01 P01 | 8min | 2 tasks | 2 files |
 | Phase 02 P02 | 2min | 1 tasks | 1 files |
+| Phase 03 P01 | 4min | 2 tasks | 1 files |
+| Phase 03 P02 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -65,6 +67,9 @@ Recent decisions affecting current work:
 - [Phase 01]: host_run_plugin_command stub enables native cargo test for WASM plugin — WASM host imports prevent linking on native targets; cfg-gated stub solves this
 - [Phase 02]: jq @sh + eval for multi-field extraction — avoids tab-join delimiter collision on empty fields
 - [Phase 02]: mktemp + mv atomic rename for debounce token writes — eliminates TOCTOU race on concurrent Stop events
+- [Phase 03]: Content assertion strategy (buf.contains) for render tests — maintainable over exact ANSI match
+- [Phase 03]: Test helper factories (make_payload, make_session) for DRY test construction
+- [Phase 03]: Round-trip serialization as proxy for broadcast_sessions correctness
 
 ### Pending Todos
 
@@ -77,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-23T05:20:06.161Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-ts/03-CONTEXT.md
+Last session: 2026-03-23T06:25:03Z
+Stopped at: Completed 03-02-PLAN.md
+Resume file: None

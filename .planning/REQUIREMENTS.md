@@ -27,9 +27,9 @@
 
 ### 测试覆盖
 
-- [ ] **TEST-01**: 为 render_status_bar() 添加单元测试，使用模拟 State 验证输出结构
-- [ ] **TEST-02**: 为 render_tabs() 添加参数化测试，覆盖不同列宽、标签数量、活动类型
-- [ ] **TEST-03**: 为 compute_tab_info() 添加测试，验证多 pane 标签页的最佳活动选择
+- [x] **TEST-01**: 为 render_status_bar() 添加单元测试，使用模拟 State 验证输出结构
+- [x] **TEST-02**: 为 render_tabs() 添加参数化测试，覆盖不同列宽、标签数量、活动类型
+- [x] **TEST-03**: 为 compute_tab_info() 添加测试，验证多 pane 标签页的最佳活动选择
 - [ ] **TEST-04**: 为 event_handler::handle_hook_event() 添加全面测试，覆盖所有事件类型
 - [ ] **TEST-05**: 为 Activity 状态转换添加测试，验证有效转换和拒绝无效转换
 - [ ] **TEST-06**: 为 merge_sessions() 添加测试，验证时间戳比较和状态合并逻辑
@@ -76,9 +76,9 @@
 | RBST-06 | Phase 2 | Complete |
 | RBST-07 | Phase 1 | Complete |
 | RBST-08 | Phase 1 | Complete |
-| TEST-01 | Phase 3 | Pending |
-| TEST-02 | Phase 3 | Pending |
-| TEST-03 | Phase 3 | Pending |
+| TEST-01 | Phase 3 | Complete |
+| TEST-02 | Phase 3 | Complete |
+| TEST-03 | Phase 3 | Complete |
 | TEST-04 | Phase 3 | Pending |
 | TEST-05 | Phase 3 | Pending |
 | TEST-06 | Phase 3 | Pending |

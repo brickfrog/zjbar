@@ -14,7 +14,7 @@
 
 - [x] **Phase 1: Rust 核心质量与健壮性** - 重构渲染逻辑、改进错误处理、显式化状态机、实现降级渲染
 - [x] **Phase 2: Shell 脚本加固** - 合并 jq 调用、添加错误日志、验证必需字段、修复 TOCTOU 竞态
-- [ ] **Phase 3: 测试覆盖与 TS 改进** - 为渲染、事件处理、状态同步添加全面测试，改进 OpenCode 类型安全
+- [x] **Phase 3: 测试覆盖与 TS 改进** - 为渲染、事件处理、状态同步添加全面测试，改进 OpenCode 类型安全 (completed 2026-03-23)
 
 ## Phase Details
 
@@ -62,7 +62,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — 渲染管道全函数测试（render_prefix、compute_tab_info、render_tabs、render_single_tab、render_status_bar、render_menu_item、render_settings_menu）
+- [x] 03-01-PLAN.md — 渲染管道全函数测试（render_prefix、compute_tab_info、render_tabs、render_single_tab、render_status_bar、render_menu_item、render_settings_menu）
 - [ ] 03-02-PLAN.md — 事件处理全覆盖、状态转换扩展、merge_sessions 测试、序列化 round-trip、OpenCode TS 类型安全
 
 ## Progress
@@ -74,4 +74,4 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Rust 核心质量与健壮性 | 2/2 | Complete | 2026-03-23 |
 | 2. Shell 脚本加固 | 2/2 | Complete | 2026-03-23 |
-| 3. 测试覆盖与 TS 改进 | 0/2 | Not started | - |
+| 3. 测试覆盖与 TS 改进 | 2/2 | Complete   | 2026-03-23 |
