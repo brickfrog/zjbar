@@ -31,7 +31,7 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — 渲染重构（提取 render_prefix/compute_tab_widths/fill_remaining）与窄终端降级渲染
+- [x] 01-01-PLAN.md — 渲染重构（提取 render_prefix/compute_tab_widths/fill_remaining）与窄终端降级渲染
 - [x] 01-02-PLAN.md — 错误处理改进（eprintln! 日志）、状态机验证（can_transition_to）、HookPayload 校验
 
 ### Phase 2: Shell 脚本加固
@@ -43,11 +43,11 @@ Plans:
   2. jq 解析失败时 stderr 中有包含脚本名和失败原因的日志消息
   3. 必需字段（hook_event、pane_id）为空时脚本提前退出并记录警告，而非发送不完整的负载
   4. zjbar-hook.sh 中 Stop 事件的去抖动使用原子文件操作，并发 Stop 事件不会导致重复通知
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: Shell 脚本 JSON 解析与错误处理改进
-- [ ] 02-02: Stop 事件去抖动竞态修复
+- [ ] 02-01-PLAN.md — 三个桥接脚本的 jq @sh 单次调用合并、错误日志、必需字段验证
+- [ ] 02-02-PLAN.md — Stop 事件去抖动 TOCTOU 竞态修复（mktemp + mv 原子操作）
 
 ### Phase 3: 测试覆盖与 TS 改进
 **Goal**: 核心业务逻辑（渲染、事件处理、状态同步）有全面的自动化测试保护，OpenCode 插件具备安全的类型转换
