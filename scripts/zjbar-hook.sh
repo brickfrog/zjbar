@@ -30,22 +30,30 @@ INPUT=$(cat)
 # Resolve plugin root: CodeBuddy uses CODEBUDDY_PLUGIN_ROOT, Claude Code uses CLAUDE_PLUGIN_ROOT
 PLUGIN_ROOT="${CODEBUDDY_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 
-# Extract fields from JSON in a single jq call.
-# NOTE: Do NOT use tab-join + IFS read — bash `read` collapses consecutive
-# tab delimiters, causing field misalignment when middle fields are empty.
-# Instead, extract each field individually. The overhead of multiple jq calls
-# is negligible compared to the zellij pipe command that follows.
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty') || exit 0
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
-CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
-TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
-NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // ""')
-AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // ""')
-NOTIF_MESSAGE=$(echo "$INPUT" | jq -r '.message // ""')
-NOTIF_TITLE=$(echo "$INPUT" | jq -r '.title // ""')
+# Extract all fields from hook JSON in a single jq call.
+# Uses @sh format for shell-safe quoting — avoids the tab-join delimiter
+# collision issue (bash `read` collapses consecutive tab delimiters).
+_JQ_OUT=$(echo "$INPUT" | jq -r '
+  "HOOK_EVENT=" + (.hook_event_name // "" | @sh) + " " +
+  "SESSION_ID=" + (.session_id // "" | @sh) + " " +
+  "TOOL_NAME=" + (.tool_name // "" | @sh) + " " +
+  "CWD=" + (.cwd // "" | @sh) + " " +
+  "TRANSCRIPT_PATH=" + (.transcript_path // "" | @sh) + " " +
+  "NOTIF_TYPE=" + (.notification_type // "" | @sh) + " " +
+  "AGENT_ID=" + (.agent_id // "" | @sh) + " " +
+  "NOTIF_MESSAGE=" + (.message // "" | @sh) + " " +
+  "NOTIF_TITLE=" + (.title // "" | @sh)
+') || {
+  echo "zjbar-hook.sh: failed to parse hook JSON — input may be malformed" >&2
+  exit 1
+}
+eval "$_JQ_OUT"
 
-[ -z "$HOOK_EVENT" ] && exit 0
+# Validate required fields
+if [ -z "$HOOK_EVENT" ]; then
+  echo "zjbar-hook.sh: missing required field: hook_event" >&2
+  exit 0
+fi
 
 # Debug: log raw event with millisecond timestamp
 if [ "$ZJBAR_DEBUG" = "1" ]; then
@@ -119,7 +127,10 @@ PAYLOAD=$(jq -nc \
     cwd: (if $cwd == "" then null else $cwd end),
     zellij_session: $zellij_session,
     term_program: (if $term_program == "" then null else $term_program end)
-  }')
+  }') || {
+  echo "zjbar-hook.sh: failed to build payload JSON" >&2
+  exit 1
+}
 
 # -- Transcript path fallback --
 # When transcript_path is not provided (e.g. CodeBuddy idle_prompt),
