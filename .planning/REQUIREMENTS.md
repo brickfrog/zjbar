@@ -18,9 +18,9 @@
 
 - [x] **RBST-01**: 在 pipe() 中为 JSON 解析失败添加 eprintln! 警告日志，包含失败原因
 - [x] **RBST-02**: 验证 HookPayload 中的必需字段（hook_event），对不完整负载记录日志
-- [ ] **RBST-03**: Shell 脚本中将多次 jq 调用合并为单次调用提取所有字段
-- [ ] **RBST-04**: Shell 脚本中为 jq 失败添加 stderr 日志记录
-- [ ] **RBST-05**: Shell 脚本中验证必需字段非空后再构建有效负载
+- [x] **RBST-03**: Shell 脚本中将多次 jq 调用合并为单次调用提取所有字段
+- [x] **RBST-04**: Shell 脚本中为 jq 失败添加 stderr 日志记录
+- [x] **RBST-05**: Shell 脚本中验证必需字段非空后再构建有效负载
 - [ ] **RBST-06**: 修复 zjbar-hook.sh 中 Stop 事件去抖动的 TOCTOU 竞态条件（使用原子文件操作）
 - [x] **RBST-07**: 实现最小化降级渲染——当渲染出错时至少显示 session pill + mode 指示器
 - [x] **RBST-08**: 为极窄终端（< 50 列）提供有意义的最小渲染而非空白
@@ -70,9 +70,9 @@
 | QUAL-06 | Phase 1 | Complete |
 | RBST-01 | Phase 1 | Complete |
 | RBST-02 | Phase 1 | Complete |
-| RBST-03 | Phase 2 | Pending |
-| RBST-04 | Phase 2 | Pending |
-| RBST-05 | Phase 2 | Pending |
+| RBST-03 | Phase 2 | Complete |
+| RBST-04 | Phase 2 | Complete |
+| RBST-05 | Phase 2 | Complete |
 | RBST-06 | Phase 2 | Pending |
 | RBST-07 | Phase 1 | Complete |
 | RBST-08 | Phase 1 | Complete |
