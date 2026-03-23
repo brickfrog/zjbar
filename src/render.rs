@@ -5,7 +5,7 @@ use crate::state::{
 };
 use std::fmt::Write;
 use std::io::Write as IoWrite;
-use zellij_tile::prelude::TabInfo;
+use zellij_tile::prelude::{InputMode, TabInfo};
 
 fn activity_priority(activity: &Activity) -> u8 {
     match activity {
@@ -251,6 +251,55 @@ fn fill_remaining(buf: &mut String, col: usize, cols: usize, bar_bg: Color) {
     let _ = write!(buf, "{RESET}");
 }
 
+/// Minimal rendering for narrow terminals.
+/// Progressive display based on available width:
+/// - cols < 3: fill with background color only
+/// - cols < 10: mode indicator character only (e.g., "N" for Normal)
+/// - cols >= 10: mode char + truncated session name
+fn render_degraded(
+    buf: &mut String,
+    cols: usize,
+    cfg: &crate::config::BarConfig,
+    mode: InputMode,
+    session_name: &str,
+) {
+    let (_mode_bg, _mode_fg, mode_text) = cfg.mode_style(mode);
+    let mode_char = mode_text.chars().next().unwrap_or('N');
+
+    write_bg!(buf, cfg.bar_bg);
+
+    if cols < 3 {
+        // Absolute minimum: background fill
+        let _ = write!(buf, "{:width$}", "", width = cols);
+    } else if cols < 10 {
+        // Mode indicator only: " N     "
+        write_fg!(buf, cfg.session_fg);
+        let _ = write!(buf, " {mode_char}");
+        let remaining = cols - 2;
+        let _ = write!(buf, "{:width$}", "", width = remaining);
+    } else {
+        // cols >= 10: mode char + truncated session name
+        write_fg!(buf, cfg.session_fg);
+        let _ = write!(buf, " {mode_char} ");
+        let remaining = cols.saturating_sub(4);
+        let mut used = 0;
+        for c in session_name.chars() {
+            let w = char_width(c);
+            if used + w > remaining {
+                break;
+            }
+            buf.push(c);
+            used += w;
+        }
+        // Pad remaining
+        let pad = remaining.saturating_sub(used);
+        if pad > 0 {
+            let _ = write!(buf, "{:width$}", "", width = pad);
+        }
+    }
+    let _ = write!(buf, "{RESET}");
+}
+
 pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     state.click_regions.clear();
     state.menu_click_regions.clear();
@@ -259,9 +308,9 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     let mut buf = String::with_capacity(cols * 4);
     buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
 
-    if cols < 5 {
-        write_bg!(buf, cfg.bar_bg);
-        let _ = write!(buf, "{:width$}{RESET}", "", width = cols);
+    if cols < 50 {
+        render_degraded(&mut buf, cols, cfg, state.input_mode,
+            state.zellij_session_name.as_deref().unwrap_or("zellij"));
         print!("{buf}");
         let _ = std::io::stdout().flush();
         return;
@@ -809,5 +858,50 @@ mod tests {
         let budget = compute_tab_widths(&tabs, &infos, &cfg, 90, 100);
         // Should still compute a valid (possibly 0) name length
         assert!(budget.max_name_len <= MAX_TAB_NAME_WIDTH);
+    }
+
+    // -- render_degraded --
+
+    #[test]
+    fn render_degraded_ultra_narrow() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 2, &cfg, InputMode::Normal, "test");
+        // Should contain 2 chars of fill + RESET, no panic
+        assert!(buf.contains(RESET));
+        assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn render_degraded_mode_only() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 8, &cfg, InputMode::Normal, "test-session");
+        // Should contain mode char "N"
+        assert!(buf.contains('N'));
+        assert!(buf.contains(RESET));
+    }
+
+    #[test]
+    fn render_degraded_with_session_name() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 25, &cfg, InputMode::Normal, "my-project");
+        // Should contain mode char and at least part of session name
+        assert!(buf.contains('N'));
+        assert!(buf.contains("my-project"));
+        assert!(buf.contains(RESET));
+    }
+
+    #[test]
+    fn render_degraded_truncates_long_name() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 12, &cfg, InputMode::Normal, "very-long-session-name");
+        // Should contain mode char but truncated name
+        assert!(buf.contains('N'));
+        // Name should be truncated (12 cols - 4 for " N " = 8 chars max)
+        assert!(!buf.contains("very-long-session-name"));
+        assert!(buf.contains(RESET));
     }
 }
