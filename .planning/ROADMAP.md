@@ -13,7 +13,7 @@
 小数阶段按数字顺序在相邻整数之间执行。
 
 - [x] **Phase 1: Rust 核心质量与健壮性** - 重构渲染逻辑、改进错误处理、显式化状态机、实现降级渲染
-- [ ] **Phase 2: Shell 脚本加固** - 合并 jq 调用、添加错误日志、验证必需字段、修复 TOCTOU 竞态
+- [x] **Phase 2: Shell 脚本加固** - 合并 jq 调用、添加错误日志、验证必需字段、修复 TOCTOU 竞态
 - [ ] **Phase 3: 测试覆盖与 TS 改进** - 为渲染、事件处理、状态同步添加全面测试，改进 OpenCode 类型安全
 
 ## Phase Details
@@ -46,8 +46,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — 三个桥接脚本的 jq @sh 单次调用合并、错误日志、必需字段验证
-- [ ] 02-02-PLAN.md — Stop 事件去抖动 TOCTOU 竞态修复（mktemp + mv 原子操作）
+- [x] 02-01-PLAN.md — 三个桥接脚本的 jq @sh 单次调用合并、错误日志、必需字段验证
+- [x] 02-02-PLAN.md — Stop 事件去抖动 TOCTOU 竞态修复（mktemp + mv 原子操作）
 
 ### Phase 3: 测试覆盖与 TS 改进
 **Goal**: 核心业务逻辑（渲染、事件处理、状态同步）有全面的自动化测试保护，OpenCode 插件具备安全的类型转换
@@ -73,5 +73,5 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Rust 核心质量与健壮性 | 2/2 | Complete | 2026-03-23 |
-| 2. Shell 脚本加固 | 0/2 | Not started | - |
+| 2. Shell 脚本加固 | 2/2 | Complete | 2026-03-23 |
 | 3. 测试覆盖与 TS 改进 | 0/2 | Not started | - |
