@@ -12,7 +12,7 @@
 
 小数阶段按数字顺序在相邻整数之间执行。
 
-- [ ] **Phase 1: Rust 核心质量与健壮性** - 重构渲染逻辑、改进错误处理、显式化状态机、实现降级渲染
+- [x] **Phase 1: Rust 核心质量与健壮性** - 重构渲染逻辑、改进错误处理、显式化状态机、实现降级渲染
 - [ ] **Phase 2: Shell 脚本加固** - 合并 jq 调用、添加错误日志、验证必需字段、修复 TOCTOU 竞态
 - [ ] **Phase 3: 测试覆盖与 TS 改进** - 为渲染、事件处理、状态同步添加全面测试，改进 OpenCode 类型安全
 
@@ -32,7 +32,7 @@
 
 Plans:
 - [ ] 01-01-PLAN.md — 渲染重构（提取 render_prefix/compute_tab_widths/fill_remaining）与窄终端降级渲染
-- [ ] 01-02-PLAN.md — 错误处理改进（eprintln! 日志）、状态机验证（can_transition_to）、HookPayload 校验
+- [x] 01-02-PLAN.md — 错误处理改进（eprintln! 日志）、状态机验证（can_transition_to）、HookPayload 校验
 
 ### Phase 2: Shell 脚本加固
 **Goal**: 所有 Shell 集成脚本在面对畸形输入、jq 失败、并发执行时能可靠运行并提供有用的诊断信息
