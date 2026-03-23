@@ -59,11 +59,11 @@ Plans:
   3. Activity 状态转换的有效路径和无效路径均有测试验证
   4. merge_sessions() 和 broadcast_sessions() 的序列化/合并逻辑有测试覆盖
   5. OpenCode 插件的 pane_id 转换有范围验证，无效输入不会产生错误的数值
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: 渲染与事件处理测试
-- [ ] 03-02: 状态同步测试与 OpenCode TS 改进
+- [ ] 03-01-PLAN.md — 渲染管道全函数测试（render_prefix、compute_tab_info、render_tabs、render_single_tab、render_status_bar、render_menu_item、render_settings_menu）
+- [ ] 03-02-PLAN.md — 事件处理全覆盖、状态转换扩展、merge_sessions 测试、序列化 round-trip、OpenCode TS 类型安全
 
 ## Progress
 
