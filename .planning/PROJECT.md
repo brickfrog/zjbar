@@ -33,10 +33,10 @@
 - [x] 故障降级渲染：确保渲染失败时仍显示最小化状态栏 — Validated in Phase 1
 - [x] Shell 脚本健壮性：改进 JSON 解析、添加错误日志、合并 jq 调用 — Validated in Phase 2
 - [x] 去抖动竞态修复：修复 zjbar-hook.sh 中 Stop 事件的 TOCTOU 问题 — Validated in Phase 2
-- [ ] 单元测试：为 render_status_bar()、render_tabs() 添加单元测试
-- [ ] 事件处理测试：为 event_handler::handle_hook_event() 添加全面测试
-- [ ] 状态同步测试：为多实例同步逻辑添加测试
-- [ ] OpenCode 插件类型安全：改进 pane_id 转换和输入验证
+- [x] 单元测试：为 render_status_bar()、render_tabs() 添加单元测试 — Validated in Phase 3
+- [x] 事件处理测试：为 event_handler::handle_hook_event() 添加全面测试 — Validated in Phase 3
+- [x] 状态同步测试：为多实例同步逻辑添加测试 — Validated in Phase 3
+- [x] OpenCode 插件类型安全：改进 pane_id 转换和输入验证 — Validated in Phase 3
 
 ### Out of Scope
 
@@ -47,9 +47,9 @@
 
 ## Context
 
-- zjbar 是一个成熟的 Zellij WASM 插件，当前有 28 个单元测试覆盖工具函数
-- 核心渲染逻辑（render_status_bar、render_tabs）缺少单元测试
-- 事件处理器和状态同步逻辑完全没有测试覆盖
+- zjbar 是一个成熟的 Zellij WASM 插件，Phase 3 完成后有 92 个单元测试
+- 核心渲染逻辑（render_status_bar、render_tabs）已有完整测试覆盖
+- 事件处理器和状态同步逻辑已有全面测试
 - Shell 脚本使用多次 jq 调用解析 JSON，效率低且错误处理不完善
 - 代码中存在多处静默失败（unwrap_or_default、serde 反序列化忽略错误）
 - Stop 事件去抖动存在 TOCTOU 竞态条件
@@ -71,4 +71,4 @@
 | 不引入新 crate 依赖 | 保持 WASM 二进制体积最小化 | — Pending |
 
 ---
-*Last updated: 2026-03-23 after Phase 2 completion*
+*Last updated: 2026-03-23 after Phase 3 completion — all phases complete*
