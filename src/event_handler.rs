@@ -20,7 +20,11 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
     let activity = match event {
         "SessionStart" => Activity::Init,
         "PreToolUse" => {
-            Activity::Tool(payload.tool_name.clone().unwrap_or_default())
+            let name = payload.tool_name.clone().unwrap_or_else(|| {
+                eprintln!("[zjbar] PreToolUse event missing tool_name, defaulting to empty");
+                String::new()
+            });
+            Activity::Tool(name)
         }
         "PostToolUse" | "PostToolUseFailure" => Activity::Thinking,
         "UserPromptSubmit" => Activity::Thinking,
@@ -40,7 +44,10 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         .sessions
         .entry(payload.pane_id)
         .or_insert_with(|| SessionInfo {
-            session_id: payload.session_id.clone().unwrap_or_default(),
+            session_id: payload.session_id.clone().unwrap_or_else(|| {
+                eprintln!("[zjbar] hook event missing session_id for pane {}", payload.pane_id);
+                String::new()
+            }),
             pane_id: payload.pane_id,
             activity: Activity::Init,
             tab_name: None,
@@ -66,6 +73,13 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         state.flash_deadlines.remove(&payload.pane_id);
     }
 
+    // Validate state transition (permissive: log but apply)
+    if !session.activity.can_transition_to(&activity) {
+        eprintln!(
+            "[zjbar] unexpected state transition: {:?} -> {:?} (pane {}, event {})",
+            session.activity, activity, payload.pane_id, payload.hook_event
+        );
+    }
     session.activity = activity;
     session.last_event_ts = crate::state::unix_now();
     if let Some(sid) = &payload.session_id {
