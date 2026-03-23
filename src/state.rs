@@ -33,6 +33,39 @@ pub enum Activity {
     Idle,
 }
 
+impl Activity {
+    /// Check if transitioning from `self` to `target` is a valid state transition.
+    /// Returns true for valid transitions, false for unexpected ones.
+    /// NOTE: This is permissive — callers should log but still apply unexpected transitions
+    /// to avoid breaking different AI tool event sequences (Codex only sends Stop,
+    /// OpenCode skips PostToolUse, etc.).
+    pub fn can_transition_to(&self, target: &Activity) -> bool {
+        use Activity::*;
+        match (self, target) {
+            // SessionStart → Init from any state (re-initialization)
+            (_, Init) => true,
+            // Thinking can be entered from most active states
+            (Idle | Init | Done | AgentDone | Thinking | Tool(_), Thinking) => true,
+            // Tool usage from Thinking or another Tool, or directly from Init (OpenCode skips Thinking)
+            (Thinking | Tool(_) | Init, Tool(_)) => true,
+            // Waiting/Notification from active processing states
+            (Thinking | Tool(_), Waiting | Notification) => true,
+            // Stop → Done from any active state
+            (Init | Thinking | Tool(_) | Prompting | Waiting | Notification, Done) => true,
+            // Done timeout → Idle, Done → AgentDone
+            (Done, Idle | AgentDone) => true,
+            // AgentDone timeout → Idle
+            (AgentDone, Idle) => true,
+            // Prompting from user input
+            (Idle | Done | AgentDone | Thinking, Prompting) => true,
+            // Allow Idle → Done (Codex only sends Stop, may be in Idle state)
+            (Idle, Done) => true,
+            // Everything else is unexpected
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub session_id: String,
@@ -55,6 +88,16 @@ pub struct HookPayload {
     pub cwd: Option<String>,
     pub zellij_session: Option<String>,
     pub term_program: Option<String>,
+}
+
+impl HookPayload {
+    /// Validate required fields. Returns an error message if validation fails, None if valid.
+    pub fn validate(&self) -> Option<&'static str> {
+        if self.hook_event.is_empty() {
+            return Some("hook_event is empty");
+        }
+        None
+    }
 }
 
 // -- Flash mode --
@@ -208,4 +251,85 @@ pub struct State {
     pub zellij_session_name: Option<String>,
     pub term_program: Option<String>,
     pub input_mode: InputMode,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transition_init_from_any_state() {
+        // SessionStart → Init should be valid from any state
+        assert!(Activity::Idle.can_transition_to(&Activity::Init));
+        assert!(Activity::Thinking.can_transition_to(&Activity::Init));
+        assert!(Activity::Done.can_transition_to(&Activity::Init));
+        assert!(Activity::Tool("Bash".into()).can_transition_to(&Activity::Init));
+    }
+
+    #[test]
+    fn transition_thinking_from_valid_states() {
+        assert!(Activity::Idle.can_transition_to(&Activity::Thinking));
+        assert!(Activity::Init.can_transition_to(&Activity::Thinking));
+        assert!(Activity::Done.can_transition_to(&Activity::Thinking));
+        assert!(Activity::Tool("Bash".into()).can_transition_to(&Activity::Thinking));
+    }
+
+    #[test]
+    fn transition_tool_from_thinking() {
+        assert!(Activity::Thinking.can_transition_to(&Activity::Tool("Bash".into())));
+        assert!(Activity::Tool("Read".into()).can_transition_to(&Activity::Tool("Write".into())));
+        assert!(Activity::Init.can_transition_to(&Activity::Tool("Bash".into())));
+    }
+
+    #[test]
+    fn transition_done_from_active_states() {
+        assert!(Activity::Thinking.can_transition_to(&Activity::Done));
+        assert!(Activity::Tool("Bash".into()).can_transition_to(&Activity::Done));
+        assert!(Activity::Waiting.can_transition_to(&Activity::Done));
+        assert!(Activity::Idle.can_transition_to(&Activity::Done)); // Codex edge case
+    }
+
+    #[test]
+    fn transition_done_to_idle() {
+        assert!(Activity::Done.can_transition_to(&Activity::Idle));
+        assert!(Activity::AgentDone.can_transition_to(&Activity::Idle));
+    }
+
+    #[test]
+    fn transition_unexpected_logged_not_blocked() {
+        // Waiting → Prompting is unexpected but should be identifiable
+        assert!(!Activity::Waiting.can_transition_to(&Activity::Prompting));
+        // Notification → Tool is unexpected
+        assert!(!Activity::Notification.can_transition_to(&Activity::Tool("Bash".into())));
+    }
+
+    #[test]
+    fn validate_payload_empty_hook_event() {
+        let payload = HookPayload {
+            source: Some("claude".into()),
+            session_id: Some("test".into()),
+            pane_id: 1,
+            hook_event: "".into(),
+            tool_name: None,
+            cwd: None,
+            zellij_session: None,
+            term_program: None,
+        };
+        assert_eq!(payload.validate(), Some("hook_event is empty"));
+    }
+
+    #[test]
+    fn validate_payload_valid() {
+        let payload = HookPayload {
+            source: Some("claude".into()),
+            session_id: Some("test".into()),
+            pane_id: 1,
+            hook_event: "PreToolUse".into(),
+            tool_name: Some("Bash".into()),
+            cwd: None,
+            zellij_session: None,
+            term_program: None,
+        };
+        assert_eq!(payload.validate(), None);
+    }
 }
