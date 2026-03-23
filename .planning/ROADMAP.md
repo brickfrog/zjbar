@@ -28,11 +28,11 @@
   3. 所有 unwrap_or_default() 和静默失败的 serde 反序列化已替换为带 eprintln! 日志的错误处理，Zellij 日志中可见错误信息
   4. Activity 状态转换通过显式验证函数控制，无效转换被拒绝并记录日志
   5. 在极窄终端（< 50 列）或渲染异常时，状态栏仍显示最小化信息（session pill + mode 指示器）而非空白
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: 渲染重构与降级渲染
-- [ ] 01-02: 错误处理与状态机改进
+- [ ] 01-01-PLAN.md — 渲染重构（提取 render_prefix/compute_tab_widths/fill_remaining）与窄终端降级渲染
+- [ ] 01-02-PLAN.md — 错误处理改进（eprintln! 日志）、状态机验证（can_transition_to）、HookPayload 校验
 
 ### Phase 2: Shell 脚本加固
 **Goal**: 所有 Shell 集成脚本在面对畸形输入、jq 失败、并发执行时能可靠运行并提供有用的诊断信息
