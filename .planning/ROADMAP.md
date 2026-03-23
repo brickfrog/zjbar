@@ -72,6 +72,6 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Rust 核心质量与健壮性 | 0/2 | Not started | - |
+| 1. Rust 核心质量与健壮性 | 2/2 | Complete | 2026-03-23 |
 | 2. Shell 脚本加固 | 0/2 | Not started | - |
 | 3. 测试覆盖与 TS 改进 | 0/2 | Not started | - |

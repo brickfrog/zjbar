@@ -7,23 +7,23 @@
 
 ### 代码质量
 
-- [ ] **QUAL-01**: 将 render.rs 中的 render_status_bar() 拆分为更小的独立函数，每个函数职责单一
-- [ ] **QUAL-02**: 将 render_tabs() 的宽度计算逻辑提取为独立的计算层
-- [ ] **QUAL-03**: 替换 main.rs 中的 unwrap_or_default() 为带 eprintln! 日志的错误处理
-- [ ] **QUAL-04**: 替换 serde 反序列化静默失败为带警告日志的处理
-- [ ] **QUAL-05**: 为 Activity 状态转换添加显式验证函数，拒绝无效转换
-- [ ] **QUAL-06**: 将分散的状态转换逻辑集中到 event_handler.rs 的状态机实现中
+- [x] **QUAL-01**: 将 render.rs 中的 render_status_bar() 拆分为更小的独立函数，每个函数职责单一
+- [x] **QUAL-02**: 将 render_tabs() 的宽度计算逻辑提取为独立的计算层
+- [x] **QUAL-03**: 替换 main.rs 中的 unwrap_or_default() 为带 eprintln! 日志的错误处理
+- [x] **QUAL-04**: 替换 serde 反序列化静默失败为带警告日志的处理
+- [x] **QUAL-05**: 为 Activity 状态转换添加显式验证函数，拒绝无效转换
+- [x] **QUAL-06**: 将分散的状态转换逻辑集中到 event_handler.rs 的状态机实现中
 
 ### 健壮性
 
-- [ ] **RBST-01**: 在 pipe() 中为 JSON 解析失败添加 eprintln! 警告日志，包含失败原因
-- [ ] **RBST-02**: 验证 HookPayload 中的必需字段（hook_event），对不完整负载记录日志
+- [x] **RBST-01**: 在 pipe() 中为 JSON 解析失败添加 eprintln! 警告日志，包含失败原因
+- [x] **RBST-02**: 验证 HookPayload 中的必需字段（hook_event），对不完整负载记录日志
 - [ ] **RBST-03**: Shell 脚本中将多次 jq 调用合并为单次调用提取所有字段
 - [ ] **RBST-04**: Shell 脚本中为 jq 失败添加 stderr 日志记录
 - [ ] **RBST-05**: Shell 脚本中验证必需字段非空后再构建有效负载
 - [ ] **RBST-06**: 修复 zjbar-hook.sh 中 Stop 事件去抖动的 TOCTOU 竞态条件（使用原子文件操作）
-- [ ] **RBST-07**: 实现最小化降级渲染——当渲染出错时至少显示 session pill + mode 指示器
-- [ ] **RBST-08**: 为极窄终端（< 50 列）提供有意义的最小渲染而非空白
+- [x] **RBST-07**: 实现最小化降级渲染——当渲染出错时至少显示 session pill + mode 指示器
+- [x] **RBST-08**: 为极窄终端（< 50 列）提供有意义的最小渲染而非空白
 
 ### 测试覆盖
 
@@ -62,20 +62,20 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QUAL-01 | Phase 1 | Pending |
-| QUAL-02 | Phase 1 | Pending |
-| QUAL-03 | Phase 1 | Pending |
-| QUAL-04 | Phase 1 | Pending |
-| QUAL-05 | Phase 1 | Pending |
-| QUAL-06 | Phase 1 | Pending |
-| RBST-01 | Phase 1 | Pending |
-| RBST-02 | Phase 1 | Pending |
+| QUAL-01 | Phase 1 | Complete |
+| QUAL-02 | Phase 1 | Complete |
+| QUAL-03 | Phase 1 | Complete |
+| QUAL-04 | Phase 1 | Complete |
+| QUAL-05 | Phase 1 | Complete |
+| QUAL-06 | Phase 1 | Complete |
+| RBST-01 | Phase 1 | Complete |
+| RBST-02 | Phase 1 | Complete |
 | RBST-03 | Phase 2 | Pending |
 | RBST-04 | Phase 2 | Pending |
 | RBST-05 | Phase 2 | Pending |
 | RBST-06 | Phase 2 | Pending |
-| RBST-07 | Phase 1 | Pending |
-| RBST-08 | Phase 1 | Pending |
+| RBST-07 | Phase 1 | Complete |
+| RBST-08 | Phase 1 | Complete |
 | TEST-01 | Phase 3 | Pending |
 | TEST-02 | Phase 3 | Pending |
 | TEST-03 | Phase 3 | Pending |
