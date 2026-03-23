@@ -93,3 +93,157 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         session.tab_name = Some(name);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_payload(event: &str, pane_id: u32) -> HookPayload {
+        HookPayload {
+            source: Some("claude".into()),
+            session_id: Some("test-session".into()),
+            pane_id,
+            hook_event: event.into(),
+            tool_name: None,
+            cwd: None,
+            zellij_session: None,
+            term_program: None,
+        }
+    }
+
+    fn make_tool_payload(tool: &str, pane_id: u32) -> HookPayload {
+        let mut p = make_payload("PreToolUse", pane_id);
+        p.tool_name = Some(tool.into());
+        p
+    }
+
+    #[test]
+    fn test_session_start_creates_session() {
+        let mut state = State::default();
+        let payload = make_payload("SessionStart", 1);
+        handle_hook_event(&mut state, payload);
+
+        let session = state.sessions.get(&1).expect("session should exist");
+        assert_eq!(session.activity, Activity::Init);
+        assert_eq!(session.pane_id, 1);
+        assert_eq!(session.session_id, "test-session");
+    }
+
+    #[test]
+    fn test_pre_tool_use_sets_tool_activity() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_tool_payload("Bash", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Tool("Bash".into()));
+    }
+
+    #[test]
+    fn test_post_tool_use_sets_thinking() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_tool_payload("Bash", 1));
+        handle_hook_event(&mut state, make_payload("PostToolUse", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Thinking);
+    }
+
+    #[test]
+    fn test_post_tool_use_failure_sets_thinking() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_tool_payload("Bash", 1));
+        handle_hook_event(&mut state, make_payload("PostToolUseFailure", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Thinking);
+    }
+
+    #[test]
+    fn test_user_prompt_submit_sets_thinking() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_payload("UserPromptSubmit", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Thinking);
+    }
+
+    #[test]
+    fn test_permission_request_sets_waiting_and_flash() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_payload("PermissionRequest", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Waiting);
+        assert!(state.flash_deadlines.contains_key(&1));
+    }
+
+    #[test]
+    fn test_notification_sets_notification_and_flash() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_payload("Notification", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Notification);
+        assert!(state.flash_deadlines.contains_key(&1));
+    }
+
+    #[test]
+    fn test_stop_sets_done_clears_flash() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        handle_hook_event(&mut state, make_payload("PermissionRequest", 1));
+        assert!(state.flash_deadlines.contains_key(&1));
+
+        handle_hook_event(&mut state, make_payload("Stop", 1));
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Done);
+        assert!(!state.flash_deadlines.contains_key(&1));
+    }
+
+    #[test]
+    fn test_session_end_removes_session() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        assert!(state.sessions.get(&1).is_some());
+
+        handle_hook_event(&mut state, make_payload("SessionEnd", 1));
+        assert!(state.sessions.get(&1).is_none());
+    }
+
+    #[test]
+    fn test_unknown_event_preserves_state() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        assert_eq!(state.sessions.get(&1).unwrap().activity, Activity::Init);
+
+        handle_hook_event(&mut state, make_payload("UnknownEvent", 1));
+        assert_eq!(state.sessions.get(&1).unwrap().activity, Activity::Init);
+    }
+
+    #[test]
+    fn test_missing_tool_name_defaults_empty() {
+        let mut state = State::default();
+        handle_hook_event(&mut state, make_payload("SessionStart", 1));
+        // PreToolUse with tool_name = None
+        handle_hook_event(&mut state, make_payload("PreToolUse", 1));
+
+        let session = state.sessions.get(&1).unwrap();
+        assert_eq!(session.activity, Activity::Tool("".into()));
+    }
+
+    #[test]
+    fn test_zellij_session_captured() {
+        let mut state = State::default();
+        let mut payload = make_payload("SessionStart", 1);
+        payload.zellij_session = Some("work".into());
+        handle_hook_event(&mut state, payload);
+
+        assert_eq!(state.zellij_session_name, Some("work".into()));
+    }
+}

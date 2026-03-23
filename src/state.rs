@@ -332,4 +332,34 @@ mod tests {
         };
         assert_eq!(payload.validate(), None);
     }
+
+    #[test]
+    fn test_transition_prompting_from_valid_states() {
+        assert!(Activity::Idle.can_transition_to(&Activity::Prompting));
+        assert!(Activity::Done.can_transition_to(&Activity::Prompting));
+        assert!(Activity::Thinking.can_transition_to(&Activity::Prompting));
+    }
+
+    #[test]
+    fn test_transition_waiting_from_valid_states() {
+        assert!(Activity::Thinking.can_transition_to(&Activity::Waiting));
+        assert!(Activity::Tool("Bash".into()).can_transition_to(&Activity::Waiting));
+    }
+
+    #[test]
+    fn test_transition_agent_done_from_done() {
+        assert!(Activity::Done.can_transition_to(&Activity::AgentDone));
+    }
+
+    #[test]
+    fn test_transition_invalid_paths() {
+        // Idle → Tool should be invalid (must go through Thinking/Init first)
+        assert!(!Activity::Idle.can_transition_to(&Activity::Tool("Bash".into())));
+        // AgentDone → Thinking should be valid (re-engagement)
+        assert!(Activity::AgentDone.can_transition_to(&Activity::Thinking));
+        // Waiting → Tool should be invalid
+        assert!(!Activity::Waiting.can_transition_to(&Activity::Tool("X".into())));
+        // Notification → Prompting should be invalid
+        assert!(!Activity::Notification.can_transition_to(&Activity::Prompting));
+    }
 }
