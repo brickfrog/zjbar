@@ -306,13 +306,19 @@ if zjbar_is_notify_event "$NOTIFY_AS_EVENT"; then
       # CodeBuddy only: debounce Stop notifications.
       # Write pending file and schedule delivery after delay.
       # A subsequent non-Stop event will delete the file, cancelling the notification.
-      # Use a unique token so stale pending files from previous Stops don't fire.
-      DEBOUNCE_TOKEN="$$-$(date +%s)"
-      echo "$DEBOUNCE_TOKEN" >"$PENDING_NOTIFY_FILE"
+      # Atomic debounce: use mktemp + mv to prevent TOCTOU race.
+      # mktemp creates a unique temp file, mv is an atomic rename(2) on same filesystem.
+      # This ensures no process reads a half-written or interleaved token.
+      DEBOUNCE_TOKEN="$$-$(date +%s)-$RANDOM"
+      TEMP_FILE=$(mktemp "/tmp/zjbar-pending-notify-${ZELLIJ_PANE_ID}.XXXXXX")
+      echo "$DEBOUNCE_TOKEN" > "$TEMP_FILE"
+      mv -f "$TEMP_FILE" "$PENDING_NOTIFY_FILE"  # atomic rename on same filesystem (/tmp → /tmp)
+
       (
         sleep "$ZJBAR_STOP_DEBOUNCE"
-        # Only send if our token is still the current pending notification
-        if [ -f "$PENDING_NOTIFY_FILE" ] && [ "$(cat "$PENDING_NOTIFY_FILE" 2>/dev/null)" = "$DEBOUNCE_TOKEN" ]; then
+        # Read token — if our token is still current, we're the latest Stop event
+        CURRENT_TOKEN=$(cat "$PENDING_NOTIFY_FILE" 2>/dev/null) || exit 0
+        if [ "$CURRENT_TOKEN" = "$DEBOUNCE_TOKEN" ]; then
           rm -f "$PENDING_NOTIFY_FILE"
           zjbar_send_notification "$TITLE" "$MESSAGE" "${PLUGIN_ROOT}/assets" "$ICON_FILE"
         fi
