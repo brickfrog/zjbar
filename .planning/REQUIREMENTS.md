@@ -30,11 +30,11 @@
 - [x] **TEST-01**: 为 render_status_bar() 添加单元测试，使用模拟 State 验证输出结构
 - [x] **TEST-02**: 为 render_tabs() 添加参数化测试，覆盖不同列宽、标签数量、活动类型
 - [x] **TEST-03**: 为 compute_tab_info() 添加测试，验证多 pane 标签页的最佳活动选择
-- [ ] **TEST-04**: 为 event_handler::handle_hook_event() 添加全面测试，覆盖所有事件类型
-- [ ] **TEST-05**: 为 Activity 状态转换添加测试，验证有效转换和拒绝无效转换
-- [ ] **TEST-06**: 为 merge_sessions() 添加测试，验证时间戳比较和状态合并逻辑
-- [ ] **TEST-07**: 为 broadcast_sessions() 序列化逻辑添加测试
-- [ ] **TEST-08**: 改进 OpenCode 插件的类型安全（pane_id 转换验证、输入校验）
+- [x] **TEST-04**: 为 event_handler::handle_hook_event() 添加全面测试，覆盖所有事件类型
+- [x] **TEST-05**: 为 Activity 状态转换添加测试，验证有效转换和拒绝无效转换
+- [x] **TEST-06**: 为 merge_sessions() 添加测试，验证时间戳比较和状态合并逻辑
+- [x] **TEST-07**: 为 broadcast_sessions() 序列化逻辑添加测试
+- [x] **TEST-08**: 改进 OpenCode 插件的类型安全（pane_id 转换验证、输入校验）
 
 ## v2 Requirements
 
@@ -79,11 +79,11 @@
 | TEST-01 | Phase 3 | Complete |
 | TEST-02 | Phase 3 | Complete |
 | TEST-03 | Phase 3 | Complete |
-| TEST-04 | Phase 3 | Pending |
-| TEST-05 | Phase 3 | Pending |
-| TEST-06 | Phase 3 | Pending |
-| TEST-07 | Phase 3 | Pending |
-| TEST-08 | Phase 3 | Pending |
+| TEST-04 | Phase 3 | Complete |
+| TEST-05 | Phase 3 | Complete |
+| TEST-06 | Phase 3 | Complete |
+| TEST-07 | Phase 3 | Complete |
+| TEST-08 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total
