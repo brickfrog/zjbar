@@ -62,34 +62,34 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QUAL-01 | — | Pending |
-| QUAL-02 | — | Pending |
-| QUAL-03 | — | Pending |
-| QUAL-04 | — | Pending |
-| QUAL-05 | — | Pending |
-| QUAL-06 | — | Pending |
-| RBST-01 | — | Pending |
-| RBST-02 | — | Pending |
-| RBST-03 | — | Pending |
-| RBST-04 | — | Pending |
-| RBST-05 | — | Pending |
-| RBST-06 | — | Pending |
-| RBST-07 | — | Pending |
-| RBST-08 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
-| TEST-05 | — | Pending |
-| TEST-06 | — | Pending |
-| TEST-07 | — | Pending |
-| TEST-08 | — | Pending |
+| QUAL-01 | Phase 1 | Pending |
+| QUAL-02 | Phase 1 | Pending |
+| QUAL-03 | Phase 1 | Pending |
+| QUAL-04 | Phase 1 | Pending |
+| QUAL-05 | Phase 1 | Pending |
+| QUAL-06 | Phase 1 | Pending |
+| RBST-01 | Phase 1 | Pending |
+| RBST-02 | Phase 1 | Pending |
+| RBST-03 | Phase 2 | Pending |
+| RBST-04 | Phase 2 | Pending |
+| RBST-05 | Phase 2 | Pending |
+| RBST-06 | Phase 2 | Pending |
+| RBST-07 | Phase 1 | Pending |
+| RBST-08 | Phase 1 | Pending |
+| TEST-01 | Phase 3 | Pending |
+| TEST-02 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Pending |
+| TEST-04 | Phase 3 | Pending |
+| TEST-05 | Phase 3 | Pending |
+| TEST-06 | Phase 3 | Pending |
+| TEST-07 | Phase 3 | Pending |
+| TEST-08 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22
+- Mapped to phases: 22
+- Unmapped: 0
 
 ---
 *Requirements defined: 2025-03-20*
-*Last updated: 2025-03-20 after initial definition*
+*Last updated: 2025-03-20 after roadmap creation*
