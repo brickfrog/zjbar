@@ -31,8 +31,8 @@
 - [x] 状态机显式化：为 Activity 状态转换添加验证逻辑 — Validated in Phase 1
 - [x] IPC 消息验证：为 pipe() 中的 JSON 解析失败添加警告日志 — Validated in Phase 1
 - [x] 故障降级渲染：确保渲染失败时仍显示最小化状态栏 — Validated in Phase 1
-- [ ] Shell 脚本健壮性：改进 JSON 解析、添加错误日志、合并 jq 调用
-- [ ] 去抖动竞态修复：修复 zjbar-hook.sh 中 Stop 事件的 TOCTOU 问题
+- [x] Shell 脚本健壮性：改进 JSON 解析、添加错误日志、合并 jq 调用 — Validated in Phase 2
+- [x] 去抖动竞态修复：修复 zjbar-hook.sh 中 Stop 事件的 TOCTOU 问题 — Validated in Phase 2
 - [ ] 单元测试：为 render_status_bar()、render_tabs() 添加单元测试
 - [ ] 事件处理测试：为 event_handler::handle_hook_event() 添加全面测试
 - [ ] 状态同步测试：为多实例同步逻辑添加测试
@@ -71,4 +71,4 @@
 | 不引入新 crate 依赖 | 保持 WASM 二进制体积最小化 | — Pending |
 
 ---
-*Last updated: 2026-03-23 after Phase 1 completion*
+*Last updated: 2026-03-23 after Phase 2 completion*
