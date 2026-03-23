@@ -58,13 +58,16 @@ macro_rules! write_bg {
 
 fn char_width(c: char) -> usize {
     let cp = c as u32;
-    if (0x2E80..=0x9FFF).contains(&cp)
-        || (0xF900..=0xFAFF).contains(&cp)
-        || (0xFE30..=0xFE4F).contains(&cp)
-        || (0xFF01..=0xFF60).contains(&cp)
-        || (0xFFE0..=0xFFE6).contains(&cp)
-        || (0x20000..=0x2FA1F).contains(&cp)
-        || (0x30000..=0x323AF).contains(&cp)
+    if (0x1100..=0x115F).contains(&cp)    // Hangul Jamo
+        || (0x2E80..=0x9FFF).contains(&cp) // CJK Radicals..CJK Unified Ideographs
+        || (0xAC00..=0xD7AF).contains(&cp) // Hangul Syllables
+        || (0xF900..=0xFAFF).contains(&cp) // CJK Compatibility Ideographs
+        || (0xFE10..=0xFE19).contains(&cp) // Vertical Forms
+        || (0xFE30..=0xFE6F).contains(&cp) // CJK Compatibility Forms + Small Form Variants
+        || (0xFF01..=0xFF60).contains(&cp) // Fullwidth Forms
+        || (0xFFE0..=0xFFE6).contains(&cp) // Fullwidth Signs
+        || (0x20000..=0x2FA1F).contains(&cp) // CJK Ext B..Kangxi Supplement
+        || (0x30000..=0x323AF).contains(&cp) // CJK Ext G..H
     {
         2
     } else {
@@ -173,29 +176,17 @@ fn compute_tab_info(
         .collect()
 }
 
-pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
-    state.click_regions.clear();
-    state.menu_click_regions.clear();
-
-    let cfg = &state.config;
-    let mut buf = String::with_capacity(cols * 4);
-    buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
-
-    if cols < 5 {
-        write_bg!(buf, cfg.bar_bg);
-        let _ = write!(buf, "{:width$}{RESET}", "", width = cols);
-        print!("{buf}");
-        let _ = std::io::stdout().flush();
-        return;
-    }
-
-    // === Left prefix: [session pill][arrow][mode pill][arrow] ===
-    let (mode_bg, mode_fg, mode_text) = cfg.mode_style(state.input_mode);
-    let session_text = state
-        .zellij_session_name
-        .as_deref()
-        .unwrap_or("zellij");
-
+/// Render the left prefix (session pill + mode pill + powerline arrows).
+/// Returns the number of columns consumed and the optional prefix click region.
+fn render_prefix(
+    buf: &mut String,
+    cols: usize,
+    cfg: &crate::config::BarConfig,
+    session_text: &str,
+    mode_bg: Color,
+    mode_fg: Color,
+    mode_text: &str,
+) -> (usize, Option<(usize, usize)>) {
     let session_pill_text = format!(" {session_text} ");
     let session_pill_width = display_width(&session_pill_text);
     let mode_pill_text = format!(" {mode_text} ");
@@ -205,6 +196,8 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
     let total_prefix_width = session_pill_width + sep_left_width + sep_left_width + mode_pill_width + sep_left_width;
 
     let mut col = 0usize;
+    let mut click_region = None;
+
     if total_prefix_width <= cols {
         // Session pill (clickable to toggle settings)
         let prefix_start = col;
@@ -212,7 +205,7 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
         write_fg!(buf, cfg.session_fg);
         let _ = write!(buf, "{BOLD}{session_pill_text}{RESET}");
         col += session_pill_width;
-        state.prefix_click_region = Some((prefix_start, col));
+        click_region = Some((prefix_start, col));
 
         // Arrow: session → mode
         write_fg!(buf, cfg.session_bg);
@@ -237,13 +230,52 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
         write_fg!(buf, cfg.session_fg);
         let _ = write!(buf, "{BOLD}{session_pill_text}{RESET}");
         col += session_pill_width;
-        state.prefix_click_region = Some((prefix_start, col));
+        click_region = Some((prefix_start, col));
 
         write_fg!(buf, cfg.session_bg);
         write_bg!(buf, cfg.bar_bg);
         let _ = write!(buf, "{}", cfg.separator_left);
         col += sep_left_width;
     }
+
+    (col, click_region)
+}
+
+/// Fill remaining columns with bar background color.
+fn fill_remaining(buf: &mut String, col: usize, cols: usize, bar_bg: Color) {
+    if col < cols {
+        let remaining = cols - col;
+        write_bg!(buf, bar_bg);
+        let _ = write!(buf, "{:width$}", "", width = remaining);
+    }
+    let _ = write!(buf, "{RESET}");
+}
+
+pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
+    state.click_regions.clear();
+    state.menu_click_regions.clear();
+
+    let cfg = &state.config;
+    let mut buf = String::with_capacity(cols * 4);
+    buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
+
+    if cols < 5 {
+        write_bg!(buf, cfg.bar_bg);
+        let _ = write!(buf, "{:width$}{RESET}", "", width = cols);
+        print!("{buf}");
+        let _ = std::io::stdout().flush();
+        return;
+    }
+
+    // === Left prefix: [session pill][arrow][mode pill][arrow] ===
+    let (mode_bg, mode_fg, mode_text) = cfg.mode_style(state.input_mode);
+    let session_text = state
+        .zellij_session_name
+        .as_deref()
+        .unwrap_or("zellij");
+    let (prefix_cols, click_region) = render_prefix(&mut buf, cols, cfg, session_text, mode_bg, mode_fg, mode_text);
+    state.prefix_click_region = click_region;
+    let mut col = prefix_cols;
 
     if col < cols {
         match state.view_mode {
@@ -252,13 +284,7 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
         }
     }
 
-    // Fill remaining with bar bg
-    if col < cols {
-        let remaining = cols - col;
-        write_bg!(buf, state.config.bar_bg);
-        let _ = write!(buf, "{:width$}", "", width = remaining);
-    }
-    let _ = write!(buf, "{RESET}");
+    fill_remaining(&mut buf, col, cols, state.config.bar_bg);
 
     print!("{buf}");
     let _ = std::io::stdout().flush();
@@ -534,6 +560,58 @@ fn render_single_tab(
     (region_start, *col)
 }
 
+struct TabWidthBudget {
+    max_name_len: usize,
+}
+
+/// Pure computation of tab name width budget. No ANSI output, no side effects.
+fn compute_tab_widths(
+    tabs: &[&TabInfo],
+    tab_infos: &[TabRenderInfo],
+    cfg: &crate::config::BarConfig,
+    prefix_cols: usize,
+    total_cols: usize,
+) -> TabWidthBudget {
+    let count = tabs.len();
+    if count == 0 {
+        return TabWidthBudget { max_name_len: 0 };
+    }
+
+    let sep_left_width = display_width(&cfg.separator_left);
+    let sep_tab_width = display_width(&cfg.separator_tab);
+
+    let fixed_per_tab: usize = tabs.iter().map(|t| {
+        let idx_digits = digit_count(t.position + 1);
+        let mid_sep = if t.active { sep_left_width } else { sep_tab_width };
+        // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
+        sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
+    }).sum();
+    let claude_overhead: usize = tab_infos
+        .iter()
+        .map(|info| if info.best_activity.is_some() { 2 } else { 0 })
+        .sum();
+    let elapsed_overhead: usize = tab_infos
+        .iter()
+        .map(|info| info.elapsed_str.as_ref().map_or(0, |s| 1 + s.len()))
+        .sum();
+
+    let indicator_overhead: usize = tabs.iter().map(|t| {
+        let mut w = 0;
+        if t.is_fullscreen_active { w += display_width(&cfg.tab_fullscreen_indicator); }
+        if t.are_floating_panes_visible { w += display_width(&cfg.tab_floating_indicator); }
+        w
+    }).sum();
+
+    let overhead = prefix_cols + fixed_per_tab + claude_overhead + elapsed_overhead + indicator_overhead + count;
+    let max_name_len = if overhead < total_cols {
+        ((total_cols - overhead) / count).min(MAX_TAB_NAME_WIDTH)
+    } else {
+        0
+    };
+
+    TabWidthBudget { max_name_len }
+}
+
 fn render_tabs(
     state: &mut State,
     buf: &mut String,
@@ -557,35 +635,8 @@ fn render_tabs(
 
     let tab_infos = compute_tab_info(state, &tabs, now_s, now_ms);
 
-    // Compute max tab name length
-    let fixed_per_tab: usize = tabs.iter().map(|t| {
-        let idx_digits = digit_count(t.position + 1);
-        let mid_sep = if t.active { sep_left_width } else { sep_tab_width };
-        // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
-        sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
-    }).sum();
-    let claude_overhead: usize = tab_infos
-        .iter()
-        .map(|info| if info.best_activity.is_some() { 2 } else { 0 })
-        .sum();
-    let elapsed_overhead: usize = tab_infos
-        .iter()
-        .map(|info| info.elapsed_str.as_ref().map_or(0, |s| 1 + s.len()))
-        .sum();
-
-    let indicator_overhead: usize = tabs.iter().map(|t| {
-        let mut w = 0;
-        if t.is_fullscreen_active { w += display_width(&cfg.tab_fullscreen_indicator); }
-        if t.are_floating_panes_visible { w += display_width(&cfg.tab_floating_indicator); }
-        w
-    }).sum();
-
-    let overhead = *col + fixed_per_tab + claude_overhead + elapsed_overhead + indicator_overhead + count;
-    let max_name_len = if overhead < cols {
-        ((cols - overhead) / count).min(MAX_TAB_NAME_WIDTH)
-    } else {
-        0
-    };
+    let budget = compute_tab_widths(&tabs, &tab_infos, cfg, *col, cols);
+    let max_name_len = budget.max_name_len;
 
     for (i, tab) in tabs.iter().enumerate() {
         if *col + MIN_TAB_COLS > cols {
@@ -713,5 +764,50 @@ mod tests {
         assert_eq!(activity_symbol(&Activity::Done), "✓");
         assert_eq!(activity_symbol(&Activity::Waiting), "⚠");
         assert_eq!(activity_symbol(&Activity::Idle), "○");
+    }
+
+    // -- compute_tab_widths --
+
+    #[test]
+    fn compute_tab_widths_basic() {
+        let tab1 = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab1];
+        let infos = vec![TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        }];
+        let cfg = crate::config::BarConfig::default();
+        let budget = compute_tab_widths(&tabs, &infos, &cfg, 20, 120);
+        assert!(budget.max_name_len > 0);
+        assert!(budget.max_name_len <= MAX_TAB_NAME_WIDTH);
+    }
+
+    #[test]
+    fn compute_tab_widths_narrow() {
+        let tab1 = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab1];
+        let infos = vec![TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        }];
+        let cfg = crate::config::BarConfig::default();
+        // Very narrow: prefix already consumed most columns
+        let budget = compute_tab_widths(&tabs, &infos, &cfg, 90, 100);
+        // Should still compute a valid (possibly 0) name length
+        assert!(budget.max_name_len <= MAX_TAB_NAME_WIDTH);
     }
 }

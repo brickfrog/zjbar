@@ -4,6 +4,13 @@ mod render;
 mod state;
 mod tab_pane_map;
 
+/// Stub out WASM host imports so that `cargo test` can link on native targets.
+/// These functions are provided by the Zellij runtime when running as a plugin;
+/// for unit tests we just need them to exist so the linker is happy.
+#[cfg(all(test, not(target_family = "wasm")))]
+#[no_mangle]
+extern "C" fn host_run_plugin_command() {}
+
 use config::BarConfig;
 use state::{
     unix_now, unix_now_ms, HookPayload, MenuAction, SessionInfo, Settings, SettingKey, State,
@@ -143,8 +150,13 @@ impl ZellijPlugin for State {
                 match context.get("type").map(|s| s.as_str()) {
                     Some("load_config") if exit_code == Some(0) => {
                         let raw = String::from_utf8_lossy(&stdout);
-                        if let Ok(settings) = serde_json::from_str::<Settings>(raw.trim()) {
-                            self.settings = settings;
+                        match serde_json::from_str::<Settings>(raw.trim()) {
+                            Ok(settings) => {
+                                self.settings = settings;
+                            }
+                            Err(e) => {
+                                eprintln!("[zjbar] failed to parse config file: {e}");
+                            }
                         }
                         self.config_loaded = true;
                     }
@@ -173,8 +185,15 @@ impl ZellijPlugin for State {
                 };
                 let payload: HookPayload = match serde_json::from_str(payload_str) {
                     Ok(p) => p,
-                    Err(_) => return false,
+                    Err(e) => {
+                        eprintln!("[zjbar] failed to parse hook payload: {e}");
+                        return false;
+                    }
                 };
+                if let Some(reason) = payload.validate() {
+                    eprintln!("[zjbar] invalid hook payload: {reason}");
+                    return false;
+                }
                 event_handler::handle_hook_event(self, payload);
                 self.broadcast_sessions();
                 true
@@ -193,21 +212,29 @@ impl ZellijPlugin for State {
             }
             "zjbar:sync" => {
                 if let Some(ref payload) = pipe_message.payload {
-                    if let Ok(sessions) =
-                        serde_json::from_str::<BTreeMap<u32, SessionInfo>>(payload)
-                    {
-                        self.merge_sessions(sessions);
-                        return true;
+                    match serde_json::from_str::<BTreeMap<u32, SessionInfo>>(payload) {
+                        Ok(sessions) => {
+                            self.merge_sessions(sessions);
+                            return true;
+                        }
+                        Err(e) => {
+                            eprintln!("[zjbar] failed to parse sync payload: {e}");
+                        }
                     }
                 }
                 false
             }
             "zjbar:settings" => {
                 if let Some(ref payload) = pipe_message.payload {
-                    if let Ok(settings) = serde_json::from_str::<Settings>(payload) {
-                        self.settings = settings;
-                        self.config_loaded = true;
-                        return true;
+                    match serde_json::from_str::<Settings>(payload) {
+                        Ok(settings) => {
+                            self.settings = settings;
+                            self.config_loaded = true;
+                            return true;
+                        }
+                        Err(e) => {
+                            eprintln!("[zjbar] failed to parse settings payload: {e}");
+                        }
                     }
                 }
                 false
@@ -247,10 +274,16 @@ impl State {
     fn cleanup_stale_sessions(&mut self) -> bool {
         let now = unix_now();
         let mut changed = false;
-        for session in self.sessions.values_mut() {
+        for (&pane_id, session) in self.sessions.iter_mut() {
             match session.activity {
                 state::Activity::Done | state::Activity::AgentDone => {
                     if now.saturating_sub(session.last_event_ts) >= DONE_TIMEOUT {
+                        if !session.activity.can_transition_to(&state::Activity::Idle) {
+                            eprintln!(
+                                "[zjbar] unexpected timeout transition: {:?} -> Idle (pane {})",
+                                session.activity, pane_id
+                            );
+                        }
                         session.activity = state::Activity::Idle;
                         changed = true;
                     }
@@ -302,15 +335,25 @@ impl State {
 
     fn broadcast_sessions(&self) {
         let mut msg = MessageToPlugin::new("zjbar:sync");
-        msg.message_payload =
-            Some(serde_json::to_string(&self.sessions).unwrap_or_default());
+        msg.message_payload = Some(match serde_json::to_string(&self.sessions) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("[zjbar] failed to serialize sessions for sync: {e}");
+                String::from("{}")
+            }
+        });
         pipe_message_to_plugin(msg);
     }
 
     fn broadcast_settings(&self) {
         let mut msg = MessageToPlugin::new("zjbar:settings");
-        msg.message_payload =
-            Some(serde_json::to_string(&self.settings).unwrap_or_default());
+        msg.message_payload = Some(match serde_json::to_string(&self.settings) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("[zjbar] failed to serialize settings for broadcast: {e}");
+                String::from("{}")
+            }
+        });
         pipe_message_to_plugin(msg);
     }
 
@@ -349,7 +392,13 @@ impl State {
             return;
         }
         self.broadcast_settings();
-        let json = serde_json::to_string(&self.settings).unwrap_or_default();
+        let json = match serde_json::to_string(&self.settings) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("[zjbar] failed to serialize settings for save: {e}");
+                return;
+            }
+        };
         let json_esc = json.replace('\'', "'\\''");
         let cmd = format!(
             "mkdir -p \"$HOME/.config/zellij/plugins\" && printf '%s' '{}' > \"$HOME/.config/zellij/plugins/zjbar.json\"",
