@@ -1201,4 +1201,343 @@ mod tests {
         // Fewer tabs = more width per tab
         assert!(budget_2.max_name_len > budget_10.max_name_len);
     }
+
+    // -- render_single_tab --
+
+    #[test]
+    fn test_render_single_tab_active_contains_name() {
+        let cfg = crate::config::BarConfig::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "editor".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let info = TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        };
+        let sep_left_width = display_width(&cfg.separator_left);
+        let sep_tab_width = display_width(&cfg.separator_tab);
+        let mut buf = String::new();
+        let mut col = 0usize;
+        let (region_start, region_end) = render_single_tab(
+            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+        );
+        assert!(buf.contains("editor"));
+        assert!(region_start < region_end);
+    }
+
+    #[test]
+    fn test_render_single_tab_with_activity_symbol() {
+        let cfg = crate::config::BarConfig::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "main".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let info = TabRenderInfo {
+            best_activity: Some(Activity::Tool("Bash".into())),
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        };
+        let sep_left_width = display_width(&cfg.separator_left);
+        let sep_tab_width = display_width(&cfg.separator_tab);
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_single_tab(
+            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+        );
+        assert!(buf.contains("⚡"));
+    }
+
+    #[test]
+    fn test_render_single_tab_with_elapsed() {
+        let cfg = crate::config::BarConfig::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "work".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let info = TabRenderInfo {
+            best_activity: Some(Activity::Thinking),
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: Some("45s".into()),
+        };
+        let sep_left_width = display_width(&cfg.separator_left);
+        let sep_tab_width = display_width(&cfg.separator_tab);
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_single_tab(
+            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+        );
+        assert!(buf.contains("45s"));
+    }
+
+    #[test]
+    fn test_render_single_tab_truncates_long_name() {
+        let cfg = crate::config::BarConfig::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "very-long-tab-name-that-exceeds".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let info = TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        };
+        let sep_left_width = display_width(&cfg.separator_left);
+        let sep_tab_width = display_width(&cfg.separator_tab);
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_single_tab(
+            &mut buf, &mut col, 120, &cfg, &tab, &info, 8, sep_left_width, sep_tab_width,
+        );
+        // Full name should NOT appear
+        assert!(!buf.contains("very-long-tab-name-that-exceeds"));
+        // Ellipsis should appear (U+2026)
+        assert!(buf.contains("\u{2026}"));
+    }
+
+    // -- render_tabs --
+
+    #[test]
+    fn test_render_tabs_empty_no_output() {
+        let mut state = State::default();
+        state.tabs = vec![];
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_tabs(&mut state, &mut buf, &mut col, 120);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_render_tabs_single_tab() {
+        let mut state = State::default();
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        let mut buf = String::new();
+        let mut col = 20usize;
+        render_tabs(&mut state, &mut buf, &mut col, 120);
+        assert!(buf.contains("Tab 1"));
+        assert_eq!(state.click_regions.len(), 1);
+    }
+
+    #[test]
+    fn test_render_tabs_multiple_tabs() {
+        let mut state = State::default();
+        state.tabs = (0..3).map(|i| TabInfo {
+            position: i,
+            name: format!("Tab {}", i + 1),
+            active: i == 0,
+            ..Default::default()
+        }).collect();
+        let mut buf = String::new();
+        let mut col = 20usize;
+        render_tabs(&mut state, &mut buf, &mut col, 120);
+        assert_eq!(state.click_regions.len(), 3);
+    }
+
+    #[test]
+    fn test_render_tabs_with_activity() {
+        let mut state = State::default();
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Tool("Bash".into()),
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        let mut buf = String::new();
+        let mut col = 20usize;
+        render_tabs(&mut state, &mut buf, &mut col, 120);
+        assert!(buf.contains("⚡"));
+    }
+
+    #[test]
+    fn test_render_tabs_narrow_terminal_stops_early() {
+        let mut state = State::default();
+        state.tabs = (0..5).map(|i| TabInfo {
+            position: i,
+            name: format!("Tab {}", i + 1),
+            active: i == 0,
+            ..Default::default()
+        }).collect();
+        let mut buf = String::new();
+        let mut col = 40usize;
+        render_tabs(&mut state, &mut buf, &mut col, 60);
+        // With col=40, cols=60, only 20 cols remaining. Not all 5 tabs can fit.
+        assert!(state.click_regions.len() < 5);
+    }
+
+    // -- render_status_bar --
+
+    #[test]
+    fn test_render_status_bar_no_panic_default_state() {
+        let mut state = State::default();
+        render_status_bar(&mut state, 1, 120);
+        // Default state has no tabs, so click_regions should be empty
+        assert!(state.click_regions.is_empty());
+    }
+
+    #[test]
+    fn test_render_status_bar_with_tabs_populates_click_regions() {
+        let mut state = State::default();
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Thinking,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        render_status_bar(&mut state, 1, 120);
+        assert!(state.click_regions.len() > 0);
+    }
+
+    #[test]
+    fn test_render_status_bar_narrow_triggers_degraded() {
+        let mut state = State::default();
+        state.zellij_session_name = Some("test".into());
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        render_status_bar(&mut state, 1, 30);
+        // Degraded mode doesn't register tab click regions
+        assert!(state.click_regions.is_empty());
+    }
+
+    // -- render_menu_item --
+
+    #[test]
+    fn test_render_menu_item_on_state() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        let mut col = 0usize;
+        let mut regions: Vec<MenuClickRegion> = Vec::new();
+        let result = render_menu_item(
+            &mut buf, &mut col, 120, cfg.bar_bg,
+            true, "Flash: brief", true,
+            &mut regions,
+            MenuAction::ToggleSetting(SettingKey::Flash),
+            cfg.menu_active_sym, cfg.menu_inactive_sym,
+            cfg.menu_active_label, cfg.menu_dim_label,
+        );
+        assert!(result);
+        assert!(buf.contains("●"));
+        assert!(buf.contains("Flash: brief"));
+        assert_eq!(regions.len(), 1);
+    }
+
+    #[test]
+    fn test_render_menu_item_off_state() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        let mut col = 0usize;
+        let mut regions: Vec<MenuClickRegion> = Vec::new();
+        let result = render_menu_item(
+            &mut buf, &mut col, 120, cfg.bar_bg,
+            false, "Flash: off", true,
+            &mut regions,
+            MenuAction::ToggleSetting(SettingKey::Flash),
+            cfg.menu_active_sym, cfg.menu_inactive_sym,
+            cfg.menu_active_label, cfg.menu_dim_label,
+        );
+        assert!(result);
+        assert!(buf.contains("○"));
+    }
+
+    #[test]
+    fn test_render_menu_item_not_enough_space() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        let mut col = 118usize;
+        let mut regions: Vec<MenuClickRegion> = Vec::new();
+        // is_first=false, so spacing check: col(118) + MIN_MENU_ITEM_COLS(4) >= cols(120)
+        let result = render_menu_item(
+            &mut buf, &mut col, 120, cfg.bar_bg,
+            true, "Test", false,
+            &mut regions,
+            MenuAction::ToggleSetting(SettingKey::Flash),
+            cfg.menu_active_sym, cfg.menu_inactive_sym,
+            cfg.menu_active_label, cfg.menu_dim_label,
+        );
+        assert!(!result);
+    }
+
+    // -- render_settings_menu --
+
+    #[test]
+    fn test_render_settings_menu_shows_all_items() {
+        let mut state = State::default();
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_settings_menu(&mut state, &mut buf, &mut col, 120);
+        assert!(buf.contains("Flash:"));
+        assert!(buf.contains("Elapsed:"));
+        assert!(buf.contains("Notify:"));
+        assert!(buf.contains("×"));
+        // 3 settings toggles + 1 close button
+        assert_eq!(state.menu_click_regions.len(), 4);
+    }
+
+    #[test]
+    fn test_render_settings_menu_narrow_truncates() {
+        let mut state = State::default();
+        let mut buf = String::new();
+        let mut col = 20usize;
+        render_settings_menu(&mut state, &mut buf, &mut col, 40);
+        // Not all items fit in 20 remaining cols
+        assert!(state.menu_click_regions.len() < 4);
+    }
+
+    // -- render_degraded (additional) --
+
+    #[test]
+    fn test_render_degraded_contains_session_name_directly() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 30, &cfg, InputMode::Normal, "work-project");
+        assert!(buf.contains("work-project"));
+        assert!(buf.contains('N'));
+    }
+
+    #[test]
+    fn test_render_degraded_locked_mode_indicator() {
+        let cfg = crate::config::BarConfig::default();
+        let mut buf = String::new();
+        render_degraded(&mut buf, 15, &cfg, InputMode::Locked, "test");
+        assert!(buf.contains('L'));
+    }
 }
