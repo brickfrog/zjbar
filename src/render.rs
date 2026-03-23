@@ -904,4 +904,301 @@ mod tests {
         assert!(!buf.contains("very-long-session-name"));
         assert!(buf.contains(RESET));
     }
+
+    // -- render_prefix --
+
+    #[test]
+    fn test_render_prefix_contains_session_name() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
+        let mut buf = String::new();
+        let (col, click_region) = render_prefix(&mut buf, 120, &cfg, "my-session", mode_bg, mode_fg, mode_text);
+        assert!(buf.contains("my-session"));
+        assert!(buf.contains("NORMAL"));
+        assert!(col > 0);
+        assert!(click_region.is_some());
+    }
+
+    #[test]
+    fn test_render_prefix_returns_click_region() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
+        let mut buf = String::new();
+        let (_col, click_region) = render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
+        let (start, end) = click_region.unwrap();
+        assert_eq!(start, 0);
+        assert!(end > 0);
+    }
+
+    #[test]
+    fn test_render_prefix_narrow_skips_mode_pill() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
+        let mut buf = String::new();
+        // Total full prefix = " ab "(4) + sep(1) + " NORMAL "(8) + sep(1) + sep(1) = 15
+        // Use cols=14 so full prefix doesn't fit, falls back to session-only
+        let (_col, _click_region) = render_prefix(&mut buf, 14, &cfg, "ab", mode_bg, mode_fg, mode_text);
+        assert!(buf.contains("ab"));
+        assert!(!buf.contains("NORMAL"));
+    }
+
+    #[test]
+    fn test_render_prefix_very_narrow_renders_nothing() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
+        let mut buf = String::new();
+        let (col, click_region) = render_prefix(&mut buf, 3, &cfg, "ab", mode_bg, mode_fg, mode_text);
+        assert_eq!(col, 0);
+        assert!(click_region.is_none());
+    }
+
+    #[test]
+    fn test_render_prefix_different_modes() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Locked);
+        let mut buf = String::new();
+        let (_col, _click_region) = render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
+        assert!(buf.contains("LOCKED"));
+    }
+
+    #[test]
+    fn test_render_prefix_cjk_session_name() {
+        let cfg = crate::config::BarConfig::default();
+        let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
+        let mut buf = String::new();
+        let (col, _click_region) = render_prefix(&mut buf, 120, &cfg, "测试", mode_bg, mode_fg, mode_text);
+        assert!(buf.contains("测试"));
+        // CJK "测试" = 4 display width, session pill = " 测试 " = 6 display width
+        // Full prefix includes session pill + arrows + mode pill + arrow, should be > 6
+        assert!(col > 6);
+    }
+
+    // -- fill_remaining --
+
+    #[test]
+    fn test_fill_remaining_pads_correctly() {
+        let mut buf = String::new();
+        fill_remaining(&mut buf, 10, 20, (0, 0, 0));
+        assert!(buf.contains(RESET));
+        assert!(!buf.is_empty());
+    }
+
+    #[test]
+    fn test_fill_remaining_no_pad_when_full() {
+        let mut buf = String::new();
+        fill_remaining(&mut buf, 20, 20, (0, 0, 0));
+        // Should contain RESET but no space padding
+        assert!(buf.contains(RESET));
+    }
+
+    // -- compute_tab_info --
+
+    #[test]
+    fn test_compute_tab_info_no_sessions() {
+        let state = State::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        let result = compute_tab_info(&state, &tabs, 100, 100_000);
+        assert!(result[0].best_activity.is_none());
+    }
+
+    #[test]
+    fn test_compute_tab_info_selects_highest_priority() {
+        let mut state = State::default();
+        // Pane 1: Thinking (priority 6)
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Thinking,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        // Pane 2: Tool("Bash") (priority 7) — higher than Thinking
+        state.sessions.insert(2, SessionInfo {
+            session_id: "s2".into(),
+            pane_id: 2,
+            activity: Activity::Tool("Bash".into()),
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        let result = compute_tab_info(&state, &tabs, 200, 200_000);
+        assert_eq!(result[0].best_activity, Some(Activity::Tool("Bash".into())));
+    }
+
+    #[test]
+    fn test_compute_tab_info_elapsed_shown_after_threshold() {
+        let mut state = State::default();
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Thinking,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        // 131 - 100 = 31s >= ELAPSED_THRESHOLD (30)
+        let result = compute_tab_info(&state, &tabs, 131, 131_000);
+        assert_eq!(result[0].elapsed_str, Some("31s".into()));
+    }
+
+    #[test]
+    fn test_compute_tab_info_elapsed_hidden_below_threshold() {
+        let mut state = State::default();
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Thinking,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        // 129 - 100 = 29s < ELAPSED_THRESHOLD (30)
+        let result = compute_tab_info(&state, &tabs, 129, 129_000);
+        assert!(result[0].elapsed_str.is_none());
+    }
+
+    #[test]
+    fn test_compute_tab_info_elapsed_disabled() {
+        let mut state = State::default();
+        state.settings.elapsed_time = false;
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Thinking,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        let result = compute_tab_info(&state, &tabs, 200, 200_000);
+        assert!(result[0].elapsed_str.is_none());
+    }
+
+    #[test]
+    fn test_compute_tab_info_flash_deadline() {
+        let mut state = State::default();
+        state.sessions.insert(1, SessionInfo {
+            session_id: "s1".into(),
+            pane_id: 1,
+            activity: Activity::Done,
+            tab_name: Some("Tab 1".into()),
+            tab_index: Some(0),
+            last_event_ts: 100,
+            cwd: None,
+        });
+        state.flash_deadlines.insert(1, 1000);
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+
+        // now_ms=500, before deadline=1000, (500/250) % 2 == 0 → flash bright
+        let result = compute_tab_info(&state, &tabs, 0, 500);
+        assert!(result[0].is_flash_bright);
+
+        // now_ms=750, before deadline=1000, (750/250) % 2 == 1 → not bright
+        let result2 = compute_tab_info(&state, &tabs, 0, 750);
+        assert!(!result2[0].is_flash_bright);
+    }
+
+    // -- compute_tab_widths (additional) --
+
+    #[test]
+    fn test_compute_tab_widths_respects_max_name_width() {
+        let tab = TabInfo {
+            position: 0,
+            name: "Tab 1".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let tabs: Vec<&TabInfo> = vec![&tab];
+        let infos = vec![TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        }];
+        let cfg = crate::config::BarConfig::default();
+        // Plenty of columns: budget should be capped at MAX_TAB_NAME_WIDTH
+        let budget = compute_tab_widths(&tabs, &infos, &cfg, 10, 200);
+        assert_eq!(budget.max_name_len, MAX_TAB_NAME_WIDTH);
+    }
+
+    #[test]
+    fn test_compute_tab_widths_many_tabs_reduces_budget() {
+        let cfg = crate::config::BarConfig::default();
+        let make_info = || TabRenderInfo {
+            best_activity: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        };
+
+        // 10 tabs
+        let tabs_10: Vec<TabInfo> = (0..10).map(|i| TabInfo {
+            position: i,
+            name: format!("Tab {}", i + 1),
+            active: i == 0,
+            ..Default::default()
+        }).collect();
+        let tab_refs_10: Vec<&TabInfo> = tabs_10.iter().collect();
+        let infos_10: Vec<TabRenderInfo> = (0..10).map(|_| make_info()).collect();
+        let budget_10 = compute_tab_widths(&tab_refs_10, &infos_10, &cfg, 20, 120);
+
+        // 2 tabs
+        let tabs_2: Vec<TabInfo> = (0..2).map(|i| TabInfo {
+            position: i,
+            name: format!("Tab {}", i + 1),
+            active: i == 0,
+            ..Default::default()
+        }).collect();
+        let tab_refs_2: Vec<&TabInfo> = tabs_2.iter().collect();
+        let infos_2: Vec<TabRenderInfo> = (0..2).map(|_| make_info()).collect();
+        let budget_2 = compute_tab_widths(&tab_refs_2, &infos_2, &cfg, 20, 120);
+
+        // Fewer tabs = more width per tab
+        assert!(budget_2.max_name_len > budget_10.max_name_len);
+    }
 }
