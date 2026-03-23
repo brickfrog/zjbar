@@ -30,23 +30,29 @@ source "${SCRIPT_DIR}/zjbar-lib.sh"
 INPUT=$(cat)
 [ -z "$INPUT" ] && { echo '{}'; exit 0; }
 
-# Detect which Gemini hook event fired.
-# First try the hook_event_name field from Gemini's stdin JSON,
-# then fall back to the ZJBAR_GEMINI_EVENT env var set by the wrapper.
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null)
+# Extract all fields from Gemini hook JSON in a single jq call.
+# Uses @sh format for shell-safe quoting — avoids the tab-join delimiter
+# collision issue (bash `read` collapses consecutive tab delimiters).
+# First try hook_event_name, fall back to env var after extraction.
+_JQ_OUT=$(echo "$INPUT" | jq -r '
+  "HOOK_EVENT=" + (.hook_event_name // "" | @sh) + " " +
+  "SESSION_ID=" + (.session_id // "" | @sh) + " " +
+  "GEMINI_CWD_INPUT=" + (.cwd // "" | @sh) + " " +
+  "TOOL_NAME=" + (.tool_name // "" | @sh) + " " +
+  "PROMPT_RESPONSE=" + (.prompt_response // "" | @sh)
+') || {
+  echo "zjbar-gemini-hook.sh: failed to parse hook JSON — input may be malformed" >&2
+  echo '{}'
+  exit 1
+}
+eval "$_JQ_OUT"
+
+# Fall back to env var if hook_event_name not in JSON
 [ -z "$HOOK_EVENT" ] && HOOK_EVENT="${ZJBAR_GEMINI_EVENT:-}"
-[ -z "$HOOK_EVENT" ] && { echo '{}'; exit 0; }
-
-# Extract common fields from Gemini hook input.
-# Structured ID/path fields joined with tab; free-text field extracted separately.
-_FIELDS=$(echo "$INPUT" | jq -r '[
-  .session_id // "",
-  .cwd // "",
-  .tool_name // ""
-] | join("\t")' 2>/dev/null) || true
-
-IFS=$'\t' read -r SESSION_ID GEMINI_CWD_INPUT TOOL_NAME <<< "$_FIELDS"
-PROMPT_RESPONSE=$(echo "$INPUT" | jq -r '.prompt_response // ""' 2>/dev/null)
+if [ -z "$HOOK_EVENT" ]; then
+  echo '{}'
+  exit 0
+fi
 
 # Use cwd from input, fall back to env vars
 EFFECTIVE_CWD="${GEMINI_CWD_INPUT:-${GEMINI_CWD:-${GEMINI_PROJECT_DIR:-}}}"
@@ -112,7 +118,11 @@ PAYLOAD=$(jq -nc \
     cwd: (if $cwd == "" then null else $cwd end),
     zellij_session: $zellij_session,
     term_program: (if $term_program == "" then null else $term_program end)
-  }')
+  }') || {
+  echo "zjbar-gemini-hook.sh: failed to build payload JSON" >&2
+  echo '{}'
+  exit 1
+}
 
 # -- Desktop notification --
 zjbar_load_notify_settings

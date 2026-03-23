@@ -25,22 +25,29 @@ source "${SCRIPT_DIR}/zjbar-lib.sh"
 INPUT="${1:-}"
 [ -z "$INPUT" ] && exit 0
 
-# Extract fields with jq
-EVENT_TYPE=$(echo "$INPUT" | jq -r '.type // ""' 2>/dev/null)
+# Extract all fields from Codex notification JSON in a single jq call.
+# Uses @sh format for shell-safe quoting — avoids the tab-join delimiter
+# collision issue (bash `read` collapses consecutive tab delimiters).
+_JQ_OUT=$(echo "$INPUT" | jq -r '
+  "EVENT_TYPE=" + (.type // "" | @sh) + " " +
+  "THREAD_ID=" + (."thread-id" // "" | @sh) + " " +
+  "TURN_ID=" + (."turn-id" // "" | @sh) + " " +
+  "CWD=" + (.cwd // "" | @sh) + " " +
+  "LAST_MESSAGE=" + (."last-assistant-message" // "" | @sh)
+') || {
+  echo "zjbar-codex-notify.sh: failed to parse notification JSON — input may be malformed" >&2
+  exit 1
+}
+eval "$_JQ_OUT"
+
+# Validate required fields
+if [ -z "$EVENT_TYPE" ]; then
+  echo "zjbar-codex-notify.sh: missing required field: type" >&2
+  exit 0
+fi
 
 # Only handle agent-turn-complete events
 [ "$EVENT_TYPE" != "agent-turn-complete" ] && exit 0
-
-# Extract notification details.
-# Structured ID/path fields joined with tab; free-text field extracted separately.
-_FIELDS=$(echo "$INPUT" | jq -r '[
-  ."thread-id" // "",
-  ."turn-id" // "",
-  .cwd // ""
-] | join("\t")') || exit 0
-
-IFS=$'\t' read -r THREAD_ID TURN_ID CWD <<< "$_FIELDS"
-LAST_MESSAGE=$(echo "$INPUT" | jq -r '."last-assistant-message" // ""')
 
 # Build zjbar JSON payload (maps to Stop event)
 PAYLOAD=$(jq -nc \
@@ -60,7 +67,10 @@ PAYLOAD=$(jq -nc \
     cwd: (if $cwd == "" then null else $cwd end),
     zellij_session: $zellij_session,
     term_program: (if $term_program == "" then null else $term_program end)
-  }')
+  }') || {
+  echo "zjbar-codex-notify.sh: failed to build payload JSON" >&2
+  exit 1
+}
 
 # -- Desktop notification --
 zjbar_load_notify_settings
