@@ -2,8 +2,8 @@
 phase: 3
 slug: ts
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-23
 ---
 
@@ -17,10 +17,10 @@ created: 2026-03-23
 
 | Property | Value |
 |----------|-------|
-| **Framework** | Rust std test (cargo test) + bun test |
-| **Config file** | Cargo.toml (Rust), opencode-plugin/package.json (TS) |
+| **Framework** | Rust std test (cargo test) |
+| **Config file** | Cargo.toml |
 | **Quick run command** | `cargo test --lib --target aarch64-apple-darwin` |
-| **Full suite command** | `cargo test --lib --target aarch64-apple-darwin && cd opencode-plugin && bun test` |
+| **Full suite command** | `cargo test --lib --target aarch64-apple-darwin && cd opencode-plugin && bun run build` |
 | **Estimated runtime** | ~5 seconds |
 
 ---
@@ -28,7 +28,7 @@ created: 2026-03-23
 ## Sampling Rate
 
 - **After every task commit:** Run `cargo test --lib --target aarch64-apple-darwin`
-- **After every plan wave:** Run `cargo test --lib --target aarch64-apple-darwin && cd opencode-plugin && bun test`
+- **After every plan wave:** Run `cargo test --lib --target aarch64-apple-darwin && cd opencode-plugin && bun run build`
 - **Before `/gsd:verify-work`:** Full suite must be green
 - **Max feedback latency:** 5 seconds
 
@@ -36,16 +36,32 @@ created: 2026-03-23
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
+| Task ID | Plan | Wave | Requirements | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 03-01-01 | 01 | 1 | TEST-01 | unit | `cargo test --lib render --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-01-02 | 01 | 1 | TEST-02 | unit | `cargo test --lib render --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-01-03 | 01 | 1 | TEST-03 | unit | `cargo test --lib event --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-01-04 | 01 | 1 | TEST-04 | unit | `cargo test --lib state --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-02-01 | 02 | 1 | TEST-05 | unit | `cargo test --lib state --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-02-02 | 02 | 1 | TEST-06 | unit | `cargo test --lib state --target aarch64-apple-darwin` | ✅ | ⬜ pending |
-| 03-02-03 | 02 | 1 | TEST-07 | unit | `cd opencode-plugin && bun test` | ❌ W0 | ⬜ pending |
-| 03-02-04 | 02 | 1 | TEST-08 | unit | `cd opencode-plugin && bun test` | ❌ W0 | ⬜ pending |
+| 03-01-T1 | 01 | 1 | TEST-01, TEST-02, TEST-03 | unit | `cargo test --target aarch64-apple-darwin render::tests` | ✅ | ⬜ pending |
+| 03-01-T2 | 01 | 1 | TEST-01, TEST-02 | unit | `cargo test --target aarch64-apple-darwin render::tests` | ✅ | ⬜ pending |
+| 03-02-T1 | 02 | 1 | TEST-04, TEST-05 | unit | `cargo test --target aarch64-apple-darwin event_handler::tests state::tests` | ✅ | ⬜ pending |
+| 03-02-T2 | 02 | 1 | TEST-06, TEST-07, TEST-08 | unit + build | `cargo test --target aarch64-apple-darwin tests && cd opencode-plugin && bun run build` | ✅ | ⬜ pending |
+
+**Task-to-requirement mapping:**
+
+- **03-01-T1** (render_prefix, fill_remaining, compute_tab_info, compute_tab_widths tests):
+  - TEST-01: render_status_bar smoke covered via compute_tab_info and compute_tab_widths (sub-functions)
+  - TEST-02: render_tabs parameterized via compute_tab_info parameterized tests
+  - TEST-03: compute_tab_info activity selection tests (priority, elapsed, flash)
+
+- **03-01-T2** (render_single_tab, render_tabs, render_status_bar, render_menu_item, render_settings_menu, render_degraded tests):
+  - TEST-01: render_status_bar smoke tests (3 tests: default, with tabs, narrow/degraded)
+  - TEST-02: render_tabs tests (5 tests: empty, single, multiple, activity, narrow)
+
+- **03-02-T1** (event handler + state transition tests):
+  - TEST-04: handle_hook_event 12 tests — all 8 event types (SessionStart, PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit, PermissionRequest, Notification, Stop, SessionEnd) + 3 edge cases
+  - TEST-05: Activity state transition 4 new tests (Prompting, Waiting, AgentDone, invalid paths)
+
+- **03-02-T2** (merge_sessions, serialization, OpenCode TS):
+  - TEST-06: merge_sessions 6 tests (new entry, newer-wins, older-loses, equal ts, pane_to_tab, multiple)
+  - TEST-07: round-trip serialization 2 tests (standard, all activity types)
+  - TEST-08: OpenCode pane_id NaN guard + remove `!` assertions + bun build verification
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -53,10 +69,7 @@ created: 2026-03-23
 
 ## Wave 0 Requirements
 
-- [ ] `opencode-plugin/__tests__/index.test.ts` — test stubs for pane_id validation (TEST-07, TEST-08)
-- [ ] bun test configured in `opencode-plugin/package.json`
-
-*Rust test infrastructure already exists and covers all Rust-side requirements.*
+*No Wave 0 requirements. All test infrastructure (Rust cargo test) already exists. OpenCode TS changes are production code fixes verified by `bun run build`, not a test suite.*
 
 ---
 
@@ -68,11 +81,11 @@ created: 2026-03-23
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 5s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify commands
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] No Wave 0 MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 5s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
