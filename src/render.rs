@@ -144,7 +144,7 @@ fn compute_tab_info(
                 state
                     .flash_deadlines
                     .get(&s.pane_id)
-                    .map(|&deadline| now_ms < deadline && (now_ms / 250) % 2 == 0)
+                    .map(|&deadline| now_ms < deadline && (now_ms / 250).is_multiple_of(2))
                     .unwrap_or(false)
             });
 
@@ -341,6 +341,7 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
 
 /// Render a single toggle menu item: "● Label" or "○ Label".
 /// Returns false if there was not enough space.
+#[allow(clippy::too_many_arguments)]
 fn render_menu_item(
     buf: &mut String,
     col: &mut usize,
@@ -460,6 +461,7 @@ fn render_settings_menu(
 
 /// Render a single tab segment (index + name + indicators + arrows).
 /// Returns `(region_start, region_end)` column range for click registration.
+#[allow(clippy::too_many_arguments)]
 fn render_single_tab(
     buf: &mut String,
     col: &mut usize,

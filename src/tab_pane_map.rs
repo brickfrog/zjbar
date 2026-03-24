@@ -26,3 +26,90 @@ pub fn build_pane_to_tab_map(
     }
     map
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tab(position: usize, name: &str) -> TabInfo {
+        TabInfo {
+            position,
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn make_pane(id: u32, is_plugin: bool) -> PaneInfo {
+        PaneInfo {
+            id,
+            is_plugin,
+            ..Default::default()
+        }
+    }
+
+    fn make_manifest(entries: Vec<(usize, Vec<PaneInfo>)>) -> PaneManifest {
+        PaneManifest {
+            panes: entries.into_iter().collect(),
+        }
+    }
+
+    #[test]
+    fn empty_inputs() {
+        let map = build_pane_to_tab_map(&[], &make_manifest(vec![]));
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn single_tab_single_terminal_pane() {
+        let tabs = [make_tab(0, "main")];
+        let manifest = make_manifest(vec![(0, vec![make_pane(1, false)])]);
+        let map = build_pane_to_tab_map(&tabs, &manifest);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map[&1], (0, "main".to_string()));
+    }
+
+    #[test]
+    fn plugin_panes_excluded() {
+        let tabs = [make_tab(0, "tab0")];
+        let manifest = make_manifest(vec![(
+            0,
+            vec![make_pane(1, false), make_pane(2, true), make_pane(3, false)],
+        )]);
+        let map = build_pane_to_tab_map(&tabs, &manifest);
+        assert_eq!(map.len(), 2);
+        assert!(map.contains_key(&1));
+        assert!(!map.contains_key(&2)); // plugin pane excluded
+        assert!(map.contains_key(&3));
+    }
+
+    #[test]
+    fn multiple_tabs() {
+        let tabs = [make_tab(0, "alpha"), make_tab(1, "beta")];
+        let manifest = make_manifest(vec![
+            (0, vec![make_pane(10, false)]),
+            (1, vec![make_pane(20, false), make_pane(21, false)]),
+        ]);
+        let map = build_pane_to_tab_map(&tabs, &manifest);
+        assert_eq!(map.len(), 3);
+        assert_eq!(map[&10], (0, "alpha".to_string()));
+        assert_eq!(map[&20], (1, "beta".to_string()));
+        assert_eq!(map[&21], (1, "beta".to_string()));
+    }
+
+    #[test]
+    fn manifest_tab_not_in_tabs_uses_empty_name() {
+        // manifest references tab_index=5 but no TabInfo has position=5
+        let tabs = [make_tab(0, "only-tab")];
+        let manifest = make_manifest(vec![(5, vec![make_pane(99, false)])]);
+        let map = build_pane_to_tab_map(&tabs, &manifest);
+        assert_eq!(map[&99], (5, String::new()));
+    }
+
+    #[test]
+    fn all_plugin_panes_yields_empty_map() {
+        let tabs = [make_tab(0, "tab0")];
+        let manifest = make_manifest(vec![(0, vec![make_pane(1, true), make_pane(2, true)])]);
+        let map = build_pane_to_tab_map(&tabs, &manifest);
+        assert!(map.is_empty());
+    }
+}

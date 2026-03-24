@@ -76,7 +76,6 @@ impl ZellijPlugin for State {
                 true
             }
             Event::Mouse(Mouse::LeftClick(_, col)) => {
-                let col = col as usize;
 
                 // Check prefix click → toggle settings menu
                 if let Some((start, end)) = self.prefix_click_region {

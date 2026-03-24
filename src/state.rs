@@ -102,18 +102,13 @@ impl HookPayload {
 
 // -- Flash mode --
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FlashMode {
+    #[default]
     Brief,
     Persist,
     Off,
-}
-
-impl Default for FlashMode {
-    fn default() -> Self {
-        Self::Brief
-    }
 }
 
 impl FlashMode {
@@ -136,18 +131,13 @@ impl FlashMode {
 
 // -- Notify mode --
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NotifyMode {
+    #[default]
     Always,
     Unfocused,
     Off,
-}
-
-impl Default for NotifyMode {
-    fn default() -> Self {
-        Self::Always
-    }
 }
 
 impl NotifyMode {
