@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Zellij status bar plugin with Tokyo Night theme and AI coding agent activity awareness",
-    "version": "1.1.40"
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "zjbar",
       "source": "./",
       "description": "Zellij status bar plugin with Tokyo Night theme and AI coding agent activity awareness",
-      "version": "1.1.40",
+      "version": "1.2.0",
       "author": {
         "name": "imroc",
         "email": "roc@imroc.cc"
