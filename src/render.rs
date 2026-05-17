@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+use crate::choir_status::{ChoirStatus, Lifecycle, StatusBarPane, StatusBarState};
 use crate::config::Color;
 use crate::state::{
     unix_now, unix_now_ms, Activity, ClickRegion, MenuAction, MenuClickRegion, SessionInfo,
@@ -41,6 +44,28 @@ fn activity_symbol(activity: &Activity) -> &'static str {
     }
 }
 
+fn lifecycle_symbol(lifecycle: Lifecycle) -> &'static str {
+    match lifecycle {
+        Lifecycle::Working => "⏳",
+        Lifecycle::ReviewOwned => "👁",
+        Lifecycle::ChangesRequested => "✎",
+        Lifecycle::Done => "✓",
+        Lifecycle::Failed => "✗",
+        Lifecycle::Exitable => "⊖",
+        Lifecycle::WaitingForRedGate => "🔴",
+    }
+}
+
+fn lifecycle_color(cfg: &crate::config::BarConfig, lifecycle: Lifecycle) -> Color {
+    match lifecycle {
+        Lifecycle::Working => cfg.activity_thinking_color,
+        Lifecycle::ReviewOwned => cfg.activity_init_color,
+        Lifecycle::ChangesRequested => cfg.activity_tool_color,
+        Lifecycle::Done | Lifecycle::Exitable => cfg.activity_done_color,
+        Lifecycle::Failed | Lifecycle::WaitingForRedGate => cfg.activity_waiting_color,
+    }
+}
+
 macro_rules! write_fg {
     ($buf:expr, $r:expr, $g:expr, $b:expr) => {
         let _ = write!($buf, "\x1b[38;2;{};{};{}m", $r, $g, $b);
@@ -67,7 +92,8 @@ fn char_width(c: char) -> usize {
         || (0xFF01..=0xFF60).contains(&cp) // Fullwidth Forms
         || (0xFFE0..=0xFFE6).contains(&cp) // Fullwidth Signs
         || (0x20000..=0x2FA1F).contains(&cp) // CJK Ext B..Kangxi Supplement
-        || (0x30000..=0x323AF).contains(&cp) // CJK Ext G..H
+        || (0x30000..=0x323AF).contains(&cp)
+    // CJK Ext G..H
     {
         2
     } else {
@@ -79,9 +105,35 @@ fn display_width(s: &str) -> usize {
     s.chars().map(char_width).sum()
 }
 
+fn write_truncated(buf: &mut String, text: &str, max_width: usize) -> usize {
+    if max_width == 0 {
+        return 0;
+    }
+    let width = display_width(text);
+    if width <= max_width {
+        buf.push_str(text);
+        return width;
+    }
+
+    let target = max_width.saturating_sub(1);
+    let mut used = 0;
+    for c in text.chars() {
+        let w = char_width(c);
+        if used + w > target {
+            break;
+        }
+        buf.push(c);
+        used += w;
+    }
+    buf.push('\u{2026}');
+    used + 1
+}
+
 /// Number of decimal digits in a positive integer (e.g. 1→1, 10→2, 100→3).
 fn digit_count(n: usize) -> usize {
-    if n == 0 { return 1; }
+    if n == 0 {
+        return 1;
+    }
     let mut d = 0;
     let mut v = n;
     while v > 0 {
@@ -99,6 +151,8 @@ const ELAPSED_THRESHOLD: u64 = 30;
 const MAX_TAB_NAME_WIDTH: usize = 20;
 /// Minimum columns required to start rendering a new tab.
 const MIN_TAB_COLS: usize = 8;
+const MIN_PANE_COLS: usize = 9;
+const MAX_AGENT_LABEL_WIDTH: usize = 28;
 /// Minimum remaining columns to render the next settings menu item.
 const MIN_MENU_ITEM_COLS: usize = 4;
 /// Minimum remaining columns to render the close button.
@@ -193,7 +247,8 @@ fn render_prefix(
     let mode_pill_width = display_width(&mode_pill_text);
 
     let sep_left_width = display_width(&cfg.separator_left);
-    let total_prefix_width = session_pill_width + sep_left_width + sep_left_width + mode_pill_width + sep_left_width;
+    let total_prefix_width =
+        session_pill_width + sep_left_width + sep_left_width + mode_pill_width + sep_left_width;
 
     let mut col = 0usize;
     let mut click_region = None;
@@ -251,6 +306,15 @@ fn fill_remaining(buf: &mut String, col: usize, cols: usize, bar_bg: Color) {
     let _ = write!(buf, "{RESET}");
 }
 
+fn fill_blank_rows(buf: &mut String, start_row: usize, rows: usize, cols: usize, bar_bg: Color) {
+    for row in start_row..rows {
+        let _ = write!(buf, "\x1b[{};1H", row + 1);
+        write_bg!(buf, bar_bg);
+        let _ = write!(buf, "{:width$}", "", width = cols);
+        let _ = write!(buf, "{RESET}");
+    }
+}
+
 /// Minimal rendering for narrow terminals.
 /// Progressive display based on available width:
 /// - cols < 3: fill with background color only
@@ -300,17 +364,397 @@ fn render_degraded(
     let _ = write!(buf, "{RESET}");
 }
 
-pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
+fn pane_label(pane: &StatusBarPane) -> String {
+    let mut label = pane.agent_id.clone();
+    if let Some(pr) = pane.pr_number {
+        let _ = write!(label, " #{pr}");
+    }
+    if pane.unresolved_threads > 0 {
+        let _ = write!(label, " !{}", pane.unresolved_threads);
+    }
+    if let Some(ci) = pane.ci_rollup.symbol() {
+        let _ = write!(label, " {ci}");
+    }
+    label
+}
+
+fn short_parent_label(parent: Option<&str>) -> String {
+    parent
+        .and_then(|id| id.rsplit('.').next())
+        .filter(|id| !id.is_empty())
+        .unwrap_or("orphan")
+        .to_string()
+}
+
+fn is_flash_bright(state: &State, pane_id: u32, now_ms: u64) -> bool {
+    state
+        .flash_deadlines
+        .get(&pane_id)
+        .map(|&deadline| now_ms < deadline && (now_ms / 250).is_multiple_of(2))
+        .unwrap_or(false)
+}
+
+fn parent_rank(parent: Option<&str>, top_panes: &[&StatusBarPane]) -> usize {
+    parent
+        .and_then(|parent_id| top_panes.iter().position(|pane| pane.agent_id == parent_id))
+        .unwrap_or(usize::MAX)
+}
+
+fn sorted_top_panes(snapshot: &StatusBarState) -> Vec<&StatusBarPane> {
+    let mut panes: Vec<&StatusBarPane> = snapshot
+        .panes
+        .iter()
+        .filter(|pane| pane.role.is_top_level())
+        .collect();
+    panes.sort_by(|a, b| {
+        a.role
+            .rank()
+            .cmp(&b.role.rank())
+            .then_with(|| a.agent_id.cmp(&b.agent_id))
+    });
+    panes
+}
+
+fn sorted_leaf_panes<'a>(
+    snapshot: &'a StatusBarState,
+    top_panes: &[&StatusBarPane],
+) -> Vec<&'a StatusBarPane> {
+    let mut panes: Vec<&StatusBarPane> = snapshot
+        .panes
+        .iter()
+        .filter(|pane| !pane.role.is_top_level())
+        .collect();
+    panes.sort_by(|a, b| {
+        parent_rank(a.parent_agent_id.as_deref(), top_panes)
+            .cmp(&parent_rank(b.parent_agent_id.as_deref(), top_panes))
+            .then_with(|| a.parent_agent_id.cmp(&b.parent_agent_id))
+            .then_with(|| a.role.rank().cmp(&b.role.rank()))
+            .then_with(|| a.agent_id.cmp(&b.agent_id))
+    });
+    panes
+}
+
+fn render_status_indicator(
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    cfg: &crate::config::BarConfig,
+    label: &str,
+    bg: Color,
+    fg: Color,
+) {
+    if *col >= cols {
+        return;
+    }
+    let sep_left_width = display_width(&cfg.separator_left);
+    let text = format!(" {label} ");
+    let fixed = sep_left_width * 2;
+    if cols.saturating_sub(*col) <= fixed {
+        return;
+    }
+    let max_text_width = cols.saturating_sub(*col + fixed);
+
+    write_fg!(buf, cfg.bar_bg);
+    write_bg!(buf, bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    write_bg!(buf, bg);
+    write_fg!(buf, fg);
+    let _ = write!(buf, "{BOLD}");
+    *col += write_truncated(buf, &text, max_text_width);
+    let _ = write!(buf, "{RESET}");
+
+    write_fg!(buf, bg);
+    write_bg!(buf, cfg.bar_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+}
+
+fn render_group_marker(
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    cfg: &crate::config::BarConfig,
+    parent: Option<&str>,
+) {
+    let label = short_parent_label(parent);
+    let text = format!(" {label}: ");
+    let width = display_width(&text);
+    if *col + width >= cols {
+        return;
+    }
+    write_bg!(buf, cfg.bar_bg);
+    write_fg!(buf, cfg.tab_separator_fg);
+    let _ = write!(buf, "{text}");
+    *col += width;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_choir_pane_pill(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    row: isize,
+    pane: &StatusBarPane,
+    is_top: bool,
+    now_ms: u64,
+) -> bool {
+    let cfg = &state.config;
+    if *col + MIN_PANE_COLS > cols {
+        return false;
+    }
+
+    let sep_left_width = display_width(&cfg.separator_left);
+    let glyph = lifecycle_symbol(pane.lifecycle);
+    let glyph_width = display_width(glyph);
+    let index_width = 2 + glyph_width;
+    let fixed_width = sep_left_width + index_width + sep_left_width + 1 + 1 + sep_left_width;
+    let remaining = cols.saturating_sub(*col);
+    if remaining <= fixed_width {
+        return false;
+    }
+    let max_label_width = remaining
+        .saturating_sub(fixed_width)
+        .min(MAX_AGENT_LABEL_WIDTH);
+    if max_label_width == 0 {
+        return false;
+    }
+
+    let flash_bright = is_flash_bright(state, pane.zellij_pane_id, now_ms);
+    let pane_bg = if flash_bright {
+        cfg.flash_bg
+    } else if is_top {
+        cfg.tab_active_bg
+    } else {
+        cfg.tab_inactive_bg
+    };
+    let pane_fg = if flash_bright {
+        cfg.flash_fg
+    } else if is_top {
+        cfg.tab_active_fg
+    } else {
+        cfg.tab_inactive_fg
+    };
+    let glyph_bg = if flash_bright {
+        cfg.flash_bg
+    } else {
+        lifecycle_color(cfg, pane.lifecycle)
+    };
+    let glyph_fg = if flash_bright {
+        cfg.flash_fg
+    } else {
+        cfg.session_fg
+    };
+
+    let region_start = *col;
+
+    write_fg!(buf, cfg.bar_bg);
+    write_bg!(buf, glyph_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    write_bg!(buf, glyph_bg);
+    write_fg!(buf, glyph_fg);
+    let _ = write!(buf, "{BOLD} {glyph} {RESET}");
+    *col += index_width;
+
+    write_fg!(buf, glyph_bg);
+    write_bg!(buf, pane_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    write_bg!(buf, pane_bg);
+    write_fg!(buf, pane_fg);
+    let _ = write!(buf, "{BOLD} ");
+    *col += 1;
+    *col += write_truncated(buf, &pane_label(pane), max_label_width);
+    let _ = write!(buf, "{RESET}");
+
+    write_bg!(buf, pane_bg);
+    let _ = write!(buf, " ");
+    *col += 1;
+    write_fg!(buf, pane_bg);
+    write_bg!(buf, cfg.bar_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    state.click_regions.push(ClickRegion {
+        row,
+        start_col: region_start,
+        end_col: *col,
+        tab_index: 0,
+        pane_id: pane.zellij_pane_id,
+        is_waiting: true,
+    });
+
+    true
+}
+
+fn render_choir_snapshot(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    rows: usize,
+    base_row: isize,
+    snapshot: &StatusBarState,
+) {
+    let now_ms = unix_now_ms();
+    let top_panes = sorted_top_panes(snapshot);
+    let leaf_panes = sorted_leaf_panes(snapshot, &top_panes);
+
+    if top_panes.is_empty() {
+        render_status_indicator(
+            buf,
+            col,
+            cols,
+            &state.config,
+            "choir no tl",
+            state.config.tab_inactive_bg,
+            state.config.tab_inactive_fg,
+        );
+    } else {
+        for pane in &top_panes {
+            if !render_choir_pane_pill(state, buf, col, cols, base_row, pane, true, now_ms) {
+                break;
+            }
+        }
+    }
+
+    if rows >= 2 {
+        fill_remaining(buf, *col, cols, state.config.bar_bg);
+        let _ = write!(buf, "\x1b[{};1H", base_row + 2);
+        let mut leaf_col = 0usize;
+        let mut current_parent: Option<&str> = None;
+        for pane in leaf_panes {
+            if current_parent != pane.parent_agent_id.as_deref() {
+                current_parent = pane.parent_agent_id.as_deref();
+                render_group_marker(buf, &mut leaf_col, cols, &state.config, current_parent);
+            }
+            if !render_choir_pane_pill(
+                state,
+                buf,
+                &mut leaf_col,
+                cols,
+                base_row + 1,
+                pane,
+                false,
+                now_ms,
+            ) {
+                break;
+            }
+        }
+        fill_remaining(buf, leaf_col, cols, state.config.bar_bg);
+        fill_blank_rows(
+            buf,
+            base_row as usize + 2,
+            base_row as usize + rows,
+            cols,
+            state.config.bar_bg,
+        );
+    } else {
+        for pane in leaf_panes {
+            if !render_choir_pane_pill(state, buf, col, cols, base_row, pane, false, now_ms) {
+                break;
+            }
+        }
+        fill_remaining(buf, *col, cols, state.config.bar_bg);
+    }
+}
+
+fn render_choir_status(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    rows: usize,
+    base_row: isize,
+) {
+    match state.choir_status.clone() {
+        ChoirStatus::Ready(snapshot) => {
+            render_choir_snapshot(state, buf, col, cols, rows, base_row, &snapshot);
+        }
+        ChoirStatus::SchemaAhead(version) => {
+            render_status_indicator(
+                buf,
+                col,
+                cols,
+                &state.config,
+                &format!("schema ahead v{version}"),
+                state.config.activity_waiting_color,
+                state.config.session_fg,
+            );
+            fill_remaining(buf, *col, cols, state.config.bar_bg);
+            fill_blank_rows(
+                buf,
+                base_row as usize + 1,
+                base_row as usize + rows,
+                cols,
+                state.config.bar_bg,
+            );
+        }
+        ChoirStatus::Invalid(_) => {
+            render_status_indicator(
+                buf,
+                col,
+                cols,
+                &state.config,
+                "choir invalid",
+                state.config.activity_waiting_color,
+                state.config.session_fg,
+            );
+            fill_remaining(buf, *col, cols, state.config.bar_bg);
+            fill_blank_rows(
+                buf,
+                base_row as usize + 1,
+                base_row as usize + rows,
+                cols,
+                state.config.bar_bg,
+            );
+        }
+        ChoirStatus::NoChoir => {
+            render_status_indicator(
+                buf,
+                col,
+                cols,
+                &state.config,
+                "no choir",
+                state.config.tab_inactive_bg,
+                state.config.tab_inactive_fg,
+            );
+            fill_remaining(buf, *col, cols, state.config.bar_bg);
+            fill_blank_rows(
+                buf,
+                base_row as usize + 1,
+                base_row as usize + rows,
+                cols,
+                state.config.bar_bg,
+            );
+        }
+    }
+}
+
+pub fn render_status_bar(state: &mut State, rows: usize, cols: usize) {
+    let rows = rows.max(1);
     state.click_regions.clear();
     state.menu_click_regions.clear();
 
     let cfg = &state.config;
-    let mut buf = String::with_capacity(cols * 4);
+    let mut buf = String::with_capacity(cols * rows * 4);
     buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
 
     if cols < 50 {
-        render_degraded(&mut buf, cols, cfg, state.input_mode,
-            state.zellij_session_name.as_deref().unwrap_or("zellij"));
+        state.prefix_click_region = None;
+        render_degraded(
+            &mut buf,
+            cols,
+            cfg,
+            state.input_mode,
+            state.zellij_session_name.as_deref().unwrap_or("zellij"),
+        );
+        fill_blank_rows(&mut buf, 1, rows, cols, state.config.bar_bg);
         print!("{buf}");
         let _ = std::io::stdout().flush();
         return;
@@ -318,22 +762,47 @@ pub fn render_status_bar(state: &mut State, _rows: usize, cols: usize) {
 
     // === Left prefix: [session pill][arrow][mode pill][arrow] ===
     let (mode_bg, mode_fg, mode_text) = cfg.mode_style(state.input_mode);
-    let session_text = state
-        .zellij_session_name
-        .as_deref()
-        .unwrap_or("zellij");
-    let (prefix_cols, click_region) = render_prefix(&mut buf, cols, cfg, session_text, mode_bg, mode_fg, mode_text);
+    let session_text = state.zellij_session_name.as_deref().unwrap_or("zellij");
+    let (prefix_cols, click_region) = render_prefix(
+        &mut buf,
+        cols,
+        cfg,
+        session_text,
+        mode_bg,
+        mode_fg,
+        mode_text,
+    );
     state.prefix_click_region = click_region;
     let mut col = prefix_cols;
 
+    let mut rendered_all_rows = false;
     if col < cols {
         match state.view_mode {
-            ViewMode::Normal => render_tabs(state, &mut buf, &mut col, cols),
+            ViewMode::Normal => {
+                render_tabs(state, &mut buf, &mut col, cols);
+                fill_remaining(&mut buf, col, cols, state.config.bar_bg);
+                rendered_all_rows = true;
+                if rows >= 2 {
+                    let _ = write!(buf, "\x1b[2;1H");
+                    let mut choir_col = 0usize;
+                    render_choir_status(
+                        state,
+                        &mut buf,
+                        &mut choir_col,
+                        cols,
+                        rows - 1,
+                        1,
+                    );
+                }
+            }
             ViewMode::Settings => render_settings_menu(state, &mut buf, &mut col, cols),
         }
     }
 
-    fill_remaining(&mut buf, col, cols, state.config.bar_bg);
+    if !rendered_all_rows {
+        fill_remaining(&mut buf, col, cols, state.config.bar_bg);
+        fill_blank_rows(&mut buf, 1, rows, cols, state.config.bar_bg);
+    }
 
     print!("{buf}");
     let _ = std::io::stdout().flush();
@@ -389,12 +858,7 @@ fn render_menu_item(
     true
 }
 
-fn render_settings_menu(
-    state: &mut State,
-    buf: &mut String,
-    col: &mut usize,
-    cols: usize,
-) {
+fn render_settings_menu(state: &mut State, buf: &mut String, col: &mut usize, cols: usize) {
     // Spacing after prefix
     write_bg!(buf, state.config.bar_bg);
     let _ = write!(buf, " ");
@@ -406,44 +870,71 @@ fn render_settings_menu(
     // --- Flash ---
     let flash_label = format!("Flash: {}", state.settings.flash.label());
     if !render_menu_item(
-        buf, col, cols, bar_bg,
+        buf,
+        col,
+        cols,
+        bar_bg,
         state.settings.flash != crate::state::FlashMode::Off,
         &flash_label,
         true,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::Flash),
-        cfg.menu_active_sym, cfg.menu_inactive_sym,
-        cfg.menu_active_label, cfg.menu_dim_label,
-    ) { return; }
+        cfg.menu_active_sym,
+        cfg.menu_inactive_sym,
+        cfg.menu_active_label,
+        cfg.menu_dim_label,
+    ) {
+        return;
+    }
 
     // --- Elapsed time ---
-    let elapsed_label = if state.settings.elapsed_time { "Elapsed: on" } else { "Elapsed: off" };
+    let elapsed_label = if state.settings.elapsed_time {
+        "Elapsed: on"
+    } else {
+        "Elapsed: off"
+    };
     if !render_menu_item(
-        buf, col, cols, bar_bg,
+        buf,
+        col,
+        cols,
+        bar_bg,
         state.settings.elapsed_time,
         elapsed_label,
         false,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::ElapsedTime),
-        cfg.menu_active_sym, cfg.menu_inactive_sym,
-        cfg.menu_active_label, cfg.menu_dim_label,
-    ) { return; }
+        cfg.menu_active_sym,
+        cfg.menu_inactive_sym,
+        cfg.menu_active_label,
+        cfg.menu_dim_label,
+    ) {
+        return;
+    }
 
     // --- Notifications ---
     let notify_label = format!("Notify: {}", state.settings.notifications.label());
     if !render_menu_item(
-        buf, col, cols, bar_bg,
+        buf,
+        col,
+        cols,
+        bar_bg,
         state.settings.notifications != crate::state::NotifyMode::Off,
         &notify_label,
         false,
         &mut state.menu_click_regions,
         MenuAction::ToggleSetting(SettingKey::Notifications),
-        cfg.menu_active_sym, cfg.menu_inactive_sym,
-        cfg.menu_active_label, cfg.menu_dim_label,
-    ) { return; }
+        cfg.menu_active_sym,
+        cfg.menu_inactive_sym,
+        cfg.menu_active_label,
+        cfg.menu_dim_label,
+    ) {
+        return;
+    }
 
     // --- Close button ---
-    if *col + MIN_CLOSE_BTN_COLS >= cols { return; }
+    if *col + MIN_CLOSE_BTN_COLS >= cols {
+        return;
+    }
     write_bg!(buf, bar_bg);
     let _ = write!(buf, "  ");
     *col += 2;
@@ -631,12 +1122,19 @@ fn compute_tab_widths(
     let sep_left_width = display_width(&cfg.separator_left);
     let sep_tab_width = display_width(&cfg.separator_tab);
 
-    let fixed_per_tab: usize = tabs.iter().map(|t| {
-        let idx_digits = digit_count(t.position + 1);
-        let mid_sep = if t.active { sep_left_width } else { sep_tab_width };
-        // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
-        sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
-    }).sum();
+    let fixed_per_tab: usize = tabs
+        .iter()
+        .map(|t| {
+            let idx_digits = digit_count(t.position + 1);
+            let mid_sep = if t.active {
+                sep_left_width
+            } else {
+                sep_tab_width
+            };
+            // leading_sep + space + index + space + mid_sep + trailing_space + trailing_sep
+            sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
+        })
+        .sum();
     let claude_overhead: usize = tab_infos
         .iter()
         .map(|info| if info.best_activity.is_some() { 2 } else { 0 })
@@ -646,14 +1144,26 @@ fn compute_tab_widths(
         .map(|info| info.elapsed_str.as_ref().map_or(0, |s| 1 + s.len()))
         .sum();
 
-    let indicator_overhead: usize = tabs.iter().map(|t| {
-        let mut w = 0;
-        if t.is_fullscreen_active { w += display_width(&cfg.tab_fullscreen_indicator); }
-        if t.are_floating_panes_visible { w += display_width(&cfg.tab_floating_indicator); }
-        w
-    }).sum();
+    let indicator_overhead: usize = tabs
+        .iter()
+        .map(|t| {
+            let mut w = 0;
+            if t.is_fullscreen_active {
+                w += display_width(&cfg.tab_fullscreen_indicator);
+            }
+            if t.are_floating_panes_visible {
+                w += display_width(&cfg.tab_floating_indicator);
+            }
+            w
+        })
+        .sum();
 
-    let overhead = prefix_cols + fixed_per_tab + claude_overhead + elapsed_overhead + indicator_overhead + count;
+    let overhead = prefix_cols
+        + fixed_per_tab
+        + claude_overhead
+        + elapsed_overhead
+        + indicator_overhead
+        + count;
     let max_name_len = if overhead < total_cols {
         ((total_cols - overhead) / count).min(MAX_TAB_NAME_WIDTH)
     } else {
@@ -663,12 +1173,7 @@ fn compute_tab_widths(
     TabWidthBudget { max_name_len }
 }
 
-fn render_tabs(
-    state: &mut State,
-    buf: &mut String,
-    col: &mut usize,
-    cols: usize,
-) {
+fn render_tabs(state: &mut State, buf: &mut String, col: &mut usize, cols: usize) {
     let cfg = &state.config;
     let now_s = unix_now();
     let now_ms = unix_now_ms();
@@ -696,10 +1201,19 @@ fn render_tabs(
 
         let info = &tab_infos[i];
         let (region_start, region_end) = render_single_tab(
-            buf, col, cols, cfg, tab, info, max_name_len, sep_left_width, sep_tab_width,
+            buf,
+            col,
+            cols,
+            cfg,
+            tab,
+            info,
+            max_name_len,
+            sep_left_width,
+            sep_tab_width,
         );
 
         state.click_regions.push(ClickRegion {
+            row: 0,
             start_col: region_start,
             end_col: region_end,
             tab_index: tab.position,
@@ -792,8 +1306,14 @@ mod tests {
 
     #[test]
     fn activity_priority_ordering() {
-        assert!(activity_priority(&Activity::Waiting) > activity_priority(&Activity::Tool("Bash".into())));
-        assert!(activity_priority(&Activity::Tool("Bash".into())) > activity_priority(&Activity::Thinking));
+        assert!(
+            activity_priority(&Activity::Waiting)
+                > activity_priority(&Activity::Tool("Bash".into()))
+        );
+        assert!(
+            activity_priority(&Activity::Tool("Bash".into()))
+                > activity_priority(&Activity::Thinking)
+        );
         assert!(activity_priority(&Activity::Thinking) > activity_priority(&Activity::Prompting));
         assert!(activity_priority(&Activity::Done) > activity_priority(&Activity::AgentDone));
         assert!(activity_priority(&Activity::AgentDone) > activity_priority(&Activity::Idle));
@@ -899,7 +1419,13 @@ mod tests {
     fn render_degraded_truncates_long_name() {
         let cfg = crate::config::BarConfig::default();
         let mut buf = String::new();
-        render_degraded(&mut buf, 12, &cfg, InputMode::Normal, "very-long-session-name");
+        render_degraded(
+            &mut buf,
+            12,
+            &cfg,
+            InputMode::Normal,
+            "very-long-session-name",
+        );
         // Should contain mode char but truncated name
         assert!(buf.contains('N'));
         // Name should be truncated (12 cols - 4 for " N " = 8 chars max)
@@ -914,7 +1440,15 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
         let mut buf = String::new();
-        let (col, click_region) = render_prefix(&mut buf, 120, &cfg, "my-session", mode_bg, mode_fg, mode_text);
+        let (col, click_region) = render_prefix(
+            &mut buf,
+            120,
+            &cfg,
+            "my-session",
+            mode_bg,
+            mode_fg,
+            mode_text,
+        );
         assert!(buf.contains("my-session"));
         assert!(buf.contains("NORMAL"));
         assert!(col > 0);
@@ -926,7 +1460,8 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
         let mut buf = String::new();
-        let (_col, click_region) = render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
+        let (_col, click_region) =
+            render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
         let (start, end) = click_region.unwrap();
         assert_eq!(start, 0);
         assert!(end > 0);
@@ -939,7 +1474,8 @@ mod tests {
         let mut buf = String::new();
         // Total full prefix = " ab "(4) + sep(1) + " NORMAL "(8) + sep(1) + sep(1) = 15
         // Use cols=14 so full prefix doesn't fit, falls back to session-only
-        let (_col, _click_region) = render_prefix(&mut buf, 14, &cfg, "ab", mode_bg, mode_fg, mode_text);
+        let (_col, _click_region) =
+            render_prefix(&mut buf, 14, &cfg, "ab", mode_bg, mode_fg, mode_text);
         assert!(buf.contains("ab"));
         assert!(!buf.contains("NORMAL"));
     }
@@ -949,7 +1485,8 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
         let mut buf = String::new();
-        let (col, click_region) = render_prefix(&mut buf, 3, &cfg, "ab", mode_bg, mode_fg, mode_text);
+        let (col, click_region) =
+            render_prefix(&mut buf, 3, &cfg, "ab", mode_bg, mode_fg, mode_text);
         assert_eq!(col, 0);
         assert!(click_region.is_none());
     }
@@ -959,7 +1496,8 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Locked);
         let mut buf = String::new();
-        let (_col, _click_region) = render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
+        let (_col, _click_region) =
+            render_prefix(&mut buf, 120, &cfg, "test", mode_bg, mode_fg, mode_text);
         assert!(buf.contains("LOCKED"));
     }
 
@@ -968,7 +1506,8 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let (mode_bg, mode_fg, mode_text) = cfg.mode_style(InputMode::Normal);
         let mut buf = String::new();
-        let (col, _click_region) = render_prefix(&mut buf, 120, &cfg, "测试", mode_bg, mode_fg, mode_text);
+        let (col, _click_region) =
+            render_prefix(&mut buf, 120, &cfg, "测试", mode_bg, mode_fg, mode_text);
         assert!(buf.contains("测试"));
         // CJK "测试" = 4 display width, session pill = " 测试 " = 6 display width
         // Full prefix includes session pill + arrows + mode pill + arrow, should be > 6
@@ -1013,25 +1552,31 @@ mod tests {
     fn test_compute_tab_info_selects_highest_priority() {
         let mut state = State::default();
         // Pane 1: Thinking (priority 6)
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Thinking,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Thinking,
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         // Pane 2: Tool("Bash") (priority 7) — higher than Thinking
-        state.sessions.insert(2, SessionInfo {
-            session_id: "s2".into(),
-            pane_id: 2,
-            activity: Activity::Tool("Bash".into()),
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            2,
+            SessionInfo {
+                session_id: "s2".into(),
+                pane_id: 2,
+                activity: Activity::Tool("Bash".into()),
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         let tab = TabInfo {
             position: 0,
             name: "Tab 1".to_string(),
@@ -1046,15 +1591,18 @@ mod tests {
     #[test]
     fn test_compute_tab_info_elapsed_shown_after_threshold() {
         let mut state = State::default();
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Thinking,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Thinking,
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         let tab = TabInfo {
             position: 0,
             name: "Tab 1".to_string(),
@@ -1070,15 +1618,18 @@ mod tests {
     #[test]
     fn test_compute_tab_info_elapsed_hidden_below_threshold() {
         let mut state = State::default();
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Thinking,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Thinking,
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         let tab = TabInfo {
             position: 0,
             name: "Tab 1".to_string(),
@@ -1095,15 +1646,18 @@ mod tests {
     fn test_compute_tab_info_elapsed_disabled() {
         let mut state = State::default();
         state.settings.elapsed_time = false;
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Thinking,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Thinking,
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         let tab = TabInfo {
             position: 0,
             name: "Tab 1".to_string(),
@@ -1118,15 +1672,18 @@ mod tests {
     #[test]
     fn test_compute_tab_info_flash_deadline() {
         let mut state = State::default();
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Done,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Done,
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         state.flash_deadlines.insert(1, 1000);
         let tab = TabInfo {
             position: 0,
@@ -1179,23 +1736,27 @@ mod tests {
         };
 
         // 10 tabs
-        let tabs_10: Vec<TabInfo> = (0..10).map(|i| TabInfo {
-            position: i,
-            name: format!("Tab {}", i + 1),
-            active: i == 0,
-            ..Default::default()
-        }).collect();
+        let tabs_10: Vec<TabInfo> = (0..10)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab {}", i + 1),
+                active: i == 0,
+                ..Default::default()
+            })
+            .collect();
         let tab_refs_10: Vec<&TabInfo> = tabs_10.iter().collect();
         let infos_10: Vec<TabRenderInfo> = (0..10).map(|_| make_info()).collect();
         let budget_10 = compute_tab_widths(&tab_refs_10, &infos_10, &cfg, 20, 120);
 
         // 2 tabs
-        let tabs_2: Vec<TabInfo> = (0..2).map(|i| TabInfo {
-            position: i,
-            name: format!("Tab {}", i + 1),
-            active: i == 0,
-            ..Default::default()
-        }).collect();
+        let tabs_2: Vec<TabInfo> = (0..2)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab {}", i + 1),
+                active: i == 0,
+                ..Default::default()
+            })
+            .collect();
         let tab_refs_2: Vec<&TabInfo> = tabs_2.iter().collect();
         let infos_2: Vec<TabRenderInfo> = (0..2).map(|_| make_info()).collect();
         let budget_2 = compute_tab_widths(&tab_refs_2, &infos_2, &cfg, 20, 120);
@@ -1226,7 +1787,15 @@ mod tests {
         let mut buf = String::new();
         let mut col = 0usize;
         let (region_start, region_end) = render_single_tab(
-            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+            &mut buf,
+            &mut col,
+            120,
+            &cfg,
+            &tab,
+            &info,
+            10,
+            sep_left_width,
+            sep_tab_width,
         );
         assert!(buf.contains("editor"));
         assert!(region_start < region_end);
@@ -1252,7 +1821,15 @@ mod tests {
         let mut buf = String::new();
         let mut col = 0usize;
         render_single_tab(
-            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+            &mut buf,
+            &mut col,
+            120,
+            &cfg,
+            &tab,
+            &info,
+            10,
+            sep_left_width,
+            sep_tab_width,
         );
         assert!(buf.contains("⚡"));
     }
@@ -1277,7 +1854,15 @@ mod tests {
         let mut buf = String::new();
         let mut col = 0usize;
         render_single_tab(
-            &mut buf, &mut col, 120, &cfg, &tab, &info, 10, sep_left_width, sep_tab_width,
+            &mut buf,
+            &mut col,
+            120,
+            &cfg,
+            &tab,
+            &info,
+            10,
+            sep_left_width,
+            sep_tab_width,
         );
         assert!(buf.contains("45s"));
     }
@@ -1302,7 +1887,15 @@ mod tests {
         let mut buf = String::new();
         let mut col = 0usize;
         render_single_tab(
-            &mut buf, &mut col, 120, &cfg, &tab, &info, 8, sep_left_width, sep_tab_width,
+            &mut buf,
+            &mut col,
+            120,
+            &cfg,
+            &tab,
+            &info,
+            8,
+            sep_left_width,
+            sep_tab_width,
         );
         // Full name should NOT appear
         assert!(!buf.contains("very-long-tab-name-that-exceeds"));
@@ -1341,12 +1934,14 @@ mod tests {
     #[test]
     fn test_render_tabs_multiple_tabs() {
         let mut state = State::default();
-        state.tabs = (0..3).map(|i| TabInfo {
-            position: i,
-            name: format!("Tab {}", i + 1),
-            active: i == 0,
-            ..Default::default()
-        }).collect();
+        state.tabs = (0..3)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab {}", i + 1),
+                active: i == 0,
+                ..Default::default()
+            })
+            .collect();
         let mut buf = String::new();
         let mut col = 20usize;
         render_tabs(&mut state, &mut buf, &mut col, 120);
@@ -1362,15 +1957,18 @@ mod tests {
             active: true,
             ..Default::default()
         }];
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Tool("Bash".into()),
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
-        });
+        state.sessions.insert(
+            1,
+            SessionInfo {
+                session_id: "s1".into(),
+                pane_id: 1,
+                activity: Activity::Tool("Bash".into()),
+                tab_name: Some("Tab 1".into()),
+                tab_index: Some(0),
+                last_event_ts: 100,
+                cwd: None,
+            },
+        );
         let mut buf = String::new();
         let mut col = 20usize;
         render_tabs(&mut state, &mut buf, &mut col, 120);
@@ -1380,12 +1978,14 @@ mod tests {
     #[test]
     fn test_render_tabs_narrow_terminal_stops_early() {
         let mut state = State::default();
-        state.tabs = (0..5).map(|i| TabInfo {
-            position: i,
-            name: format!("Tab {}", i + 1),
-            active: i == 0,
-            ..Default::default()
-        }).collect();
+        state.tabs = (0..5)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab {}", i + 1),
+                active: i == 0,
+                ..Default::default()
+            })
+            .collect();
         let mut buf = String::new();
         let mut col = 40usize;
         render_tabs(&mut state, &mut buf, &mut col, 60);
@@ -1404,25 +2004,112 @@ mod tests {
     }
 
     #[test]
-    fn test_render_status_bar_with_tabs_populates_click_regions() {
+    fn test_render_status_bar_with_choir_snapshot_populates_click_regions() {
+        let mut state = State::default();
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![StatusBarPane {
+                zellij_pane_id: 1,
+                agent_id: "root".into(),
+                role: crate::choir_status::ChoirRole::Root,
+                agent_type: crate::choir_status::AgentType::Codex,
+                lifecycle: Lifecycle::Working,
+                pr_number: None,
+                unresolved_threads: 0,
+                ci_rollup: crate::choir_status::CiRollup::Unknown,
+                attention_needed: false,
+                parent_agent_id: None,
+                last_activity_unix: 100,
+            }],
+        });
+        render_status_bar(&mut state, 2, 120);
+        assert!(state.click_regions.len() > 0);
+        assert_eq!(state.click_regions[0].row, 1);
+        assert_eq!(state.click_regions[0].pane_id, 1);
+    }
+
+    #[test]
+    fn test_render_status_bar_keeps_tabs_on_first_row_and_choir_on_second() {
         let mut state = State::default();
         state.tabs = vec![TabInfo {
             position: 0,
-            name: "Tab 1".to_string(),
+            name: "Server".to_string(),
             active: true,
             ..Default::default()
         }];
-        state.sessions.insert(1, SessionInfo {
-            session_id: "s1".into(),
-            pane_id: 1,
-            activity: Activity::Thinking,
-            tab_name: Some("Tab 1".into()),
-            tab_index: Some(0),
-            last_event_ts: 100,
-            cwd: None,
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![StatusBarPane {
+                zellij_pane_id: 1,
+                agent_id: "root".into(),
+                role: crate::choir_status::ChoirRole::Root,
+                agent_type: crate::choir_status::AgentType::Codex,
+                lifecycle: Lifecycle::Working,
+                pr_number: None,
+                unresolved_threads: 0,
+                ci_rollup: crate::choir_status::CiRollup::Unknown,
+                attention_needed: false,
+                parent_agent_id: None,
+                last_activity_unix: 100,
+            }],
         });
-        render_status_bar(&mut state, 1, 120);
-        assert!(state.click_regions.len() > 0);
+        render_status_bar(&mut state, 2, 120);
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 0 && region.tab_index == 0 && !region.is_waiting));
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 1 && region.pane_id == 1 && region.is_waiting));
+    }
+
+    #[test]
+    fn test_render_status_bar_collapses_choir_hierarchy_on_second_row() {
+        let mut state = State::default();
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![
+                StatusBarPane {
+                    zellij_pane_id: 1,
+                    agent_id: "root".into(),
+                    role: crate::choir_status::ChoirRole::Root,
+                    agent_type: crate::choir_status::AgentType::Codex,
+                    lifecycle: Lifecycle::Working,
+                    pr_number: None,
+                    unresolved_threads: 0,
+                    ci_rollup: crate::choir_status::CiRollup::Unknown,
+                    attention_needed: false,
+                    parent_agent_id: None,
+                    last_activity_unix: 100,
+                },
+                StatusBarPane {
+                    zellij_pane_id: 2,
+                    agent_id: "root.leaf-a".into(),
+                    role: crate::choir_status::ChoirRole::Dev,
+                    agent_type: crate::choir_status::AgentType::Codex,
+                    lifecycle: Lifecycle::ChangesRequested,
+                    pr_number: Some(42),
+                    unresolved_threads: 3,
+                    ci_rollup: crate::choir_status::CiRollup::Failure,
+                    attention_needed: true,
+                    parent_agent_id: Some("root".into()),
+                    last_activity_unix: 101,
+                },
+            ],
+        });
+        render_status_bar(&mut state, 2, 140);
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 1 && region.pane_id == 1));
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 1 && region.pane_id == 2));
     }
 
     #[test]
@@ -1449,12 +2136,19 @@ mod tests {
         let mut col = 0usize;
         let mut regions: Vec<MenuClickRegion> = Vec::new();
         let result = render_menu_item(
-            &mut buf, &mut col, 120, cfg.bar_bg,
-            true, "Flash: brief", true,
+            &mut buf,
+            &mut col,
+            120,
+            cfg.bar_bg,
+            true,
+            "Flash: brief",
+            true,
             &mut regions,
             MenuAction::ToggleSetting(SettingKey::Flash),
-            cfg.menu_active_sym, cfg.menu_inactive_sym,
-            cfg.menu_active_label, cfg.menu_dim_label,
+            cfg.menu_active_sym,
+            cfg.menu_inactive_sym,
+            cfg.menu_active_label,
+            cfg.menu_dim_label,
         );
         assert!(result);
         assert!(buf.contains("●"));
@@ -1469,12 +2163,19 @@ mod tests {
         let mut col = 0usize;
         let mut regions: Vec<MenuClickRegion> = Vec::new();
         let result = render_menu_item(
-            &mut buf, &mut col, 120, cfg.bar_bg,
-            false, "Flash: off", true,
+            &mut buf,
+            &mut col,
+            120,
+            cfg.bar_bg,
+            false,
+            "Flash: off",
+            true,
             &mut regions,
             MenuAction::ToggleSetting(SettingKey::Flash),
-            cfg.menu_active_sym, cfg.menu_inactive_sym,
-            cfg.menu_active_label, cfg.menu_dim_label,
+            cfg.menu_active_sym,
+            cfg.menu_inactive_sym,
+            cfg.menu_active_label,
+            cfg.menu_dim_label,
         );
         assert!(result);
         assert!(buf.contains("○"));
@@ -1488,12 +2189,19 @@ mod tests {
         let mut regions: Vec<MenuClickRegion> = Vec::new();
         // is_first=false, so spacing check: col(118) + MIN_MENU_ITEM_COLS(4) >= cols(120)
         let result = render_menu_item(
-            &mut buf, &mut col, 120, cfg.bar_bg,
-            true, "Test", false,
+            &mut buf,
+            &mut col,
+            120,
+            cfg.bar_bg,
+            true,
+            "Test",
+            false,
             &mut regions,
             MenuAction::ToggleSetting(SettingKey::Flash),
-            cfg.menu_active_sym, cfg.menu_inactive_sym,
-            cfg.menu_active_label, cfg.menu_dim_label,
+            cfg.menu_active_sym,
+            cfg.menu_inactive_sym,
+            cfg.menu_active_label,
+            cfg.menu_dim_label,
         );
         assert!(!result);
     }

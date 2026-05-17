@@ -1,3 +1,4 @@
+mod choir_status;
 mod config;
 mod event_handler;
 mod render;
@@ -11,12 +12,13 @@ mod tab_pane_map;
 #[no_mangle]
 extern "C" fn host_run_plugin_command() {}
 
+use choir_status::{ChoirStatus, StatusBarError, StatusBarState, CHOIR_POLL_INTERVAL_MS};
 use config::BarConfig;
 use state::{
-    unix_now, unix_now_ms, HookPayload, MenuAction, SessionInfo, Settings, SettingKey, State,
+    unix_now, unix_now_ms, HookPayload, MenuAction, SessionInfo, SettingKey, Settings, State,
     ViewMode,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use zellij_tile::prelude::*;
 
 const DONE_TIMEOUT: u64 = 30;
@@ -29,13 +31,6 @@ impl ZellijPlugin for State {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = BarConfig::from_kdl(&configuration);
 
-        request_permission(&[
-            PermissionType::ReadApplicationState,
-            PermissionType::ChangeApplicationState,
-            PermissionType::ReadCliPipes,
-            PermissionType::MessageAndLaunchOtherPlugins,
-            PermissionType::RunCommands,
-        ]);
         subscribe(&[
             EventType::TabUpdate,
             EventType::PaneUpdate,
@@ -45,8 +40,14 @@ impl ZellijPlugin for State {
             EventType::PermissionRequestResult,
             EventType::RunCommandResult,
         ]);
+        request_permission(&[
+            PermissionType::ReadApplicationState,
+            PermissionType::ChangeApplicationState,
+            PermissionType::ReadCliPipes,
+            PermissionType::MessageAndLaunchOtherPlugins,
+            PermissionType::RunCommands,
+        ]);
         set_timeout(TIMER_INTERVAL);
-        self.load_config();
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -75,11 +76,10 @@ impl ZellijPlugin for State {
                 }
                 true
             }
-            Event::Mouse(Mouse::LeftClick(_, col)) => {
-
+            Event::Mouse(Mouse::LeftClick(row, col)) => {
                 // Check prefix click → toggle settings menu
                 if let Some((start, end)) = self.prefix_click_region {
-                    if col >= start && col < end {
+                    if row == 0 && col >= start && col < end {
                         self.view_mode = match self.view_mode {
                             ViewMode::Normal => ViewMode::Settings,
                             ViewMode::Settings => ViewMode::Normal,
@@ -91,7 +91,8 @@ impl ZellijPlugin for State {
                 match self.view_mode {
                     ViewMode::Normal => {
                         for region in &self.click_regions {
-                            if col >= region.start_col && col < region.end_col {
+                            if row == region.row && col >= region.start_col && col < region.end_col
+                            {
                                 if region.is_waiting {
                                     focus_terminal_pane(region.pane_id, false);
                                 } else {
@@ -109,8 +110,7 @@ impl ZellijPlugin for State {
                                     MenuAction::ToggleSetting(key) => {
                                         match key {
                                             SettingKey::Flash => {
-                                                self.settings.flash =
-                                                    self.settings.flash.cycle();
+                                                self.settings.flash = self.settings.flash.cycle();
                                             }
                                             SettingKey::ElapsedTime => {
                                                 self.settings.elapsed_time =
@@ -137,16 +137,43 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 let stale_changed = self.cleanup_stale_sessions();
                 let flash_changed = self.cleanup_expired_flashes();
+                let poll_started = self.poll_choir_status_if_due();
                 let has_flashes = self.has_active_flashes();
                 if has_flashes {
                     set_timeout(FLASH_TICK);
                 } else {
                     set_timeout(TIMER_INTERVAL);
                 }
-                has_flashes || stale_changed || flash_changed || self.has_elapsed_display()
+                has_flashes
+                    || stale_changed
+                    || flash_changed
+                    || poll_started
+                    || self.has_elapsed_display()
             }
             Event::RunCommandResult(exit_code, stdout, _stderr, context) => {
                 match context.get("type").map(|s| s.as_str()) {
+                    Some("choir_status_poll") => {
+                        self.choir_poll_inflight = false;
+                        if exit_code == Some(0) {
+                            let raw = String::from_utf8_lossy(&stdout);
+                            match choir_status::parse_status_bar_state_response(raw.trim()) {
+                                Ok(snapshot) => self.apply_choir_snapshot(snapshot),
+                                Err(StatusBarError::SchemaAhead(version)) => {
+                                    self.apply_choir_status_error(ChoirStatus::SchemaAhead(
+                                        version,
+                                    ));
+                                }
+                                Err(e) => {
+                                    eprintln!("[zjbar] failed to parse choir status: {e}");
+                                    self.apply_choir_status_error(ChoirStatus::Invalid(
+                                        e.to_string(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            self.apply_choir_status_error(ChoirStatus::NoChoir);
+                        }
+                    }
                     Some("load_config") if exit_code == Some(0) => {
                         let raw = String::from_utf8_lossy(&stdout);
                         match serde_json::from_str::<Settings>(raw.trim()) {
@@ -168,6 +195,7 @@ impl ZellijPlugin for State {
                 if !self.config_loaded {
                     self.load_config();
                 }
+                self.poll_choir_status_if_due();
                 self.request_sync();
                 false
             }
@@ -248,6 +276,52 @@ impl ZellijPlugin for State {
 }
 
 impl State {
+    fn poll_choir_status_if_due(&mut self) -> bool {
+        if self.choir_poll_inflight {
+            return false;
+        }
+        let now = unix_now_ms();
+        if self.choir_last_poll_ms != 0
+            && now.saturating_sub(self.choir_last_poll_ms) < CHOIR_POLL_INTERVAL_MS
+        {
+            return false;
+        }
+        self.choir_last_poll_ms = now;
+        self.choir_poll_inflight = true;
+        let mut ctx = BTreeMap::new();
+        ctx.insert("type".into(), "choir_status_poll".into());
+        let cmd = choir_status::poll_command(&self.config.choir_socket);
+        run_command(&["sh", "-c", &cmd], ctx);
+        false
+    }
+
+    fn apply_choir_snapshot(&mut self, snapshot: StatusBarState) {
+        let now = unix_now_ms();
+        let next_attention: HashSet<u32> = snapshot
+            .panes
+            .iter()
+            .filter(|pane| pane.attention_needed)
+            .map(|pane| pane.zellij_pane_id)
+            .collect();
+
+        for pane_id in next_attention.difference(&self.attention_panes) {
+            self.flash_deadlines
+                .insert(*pane_id, now + state::FLASH_DURATION_MS);
+        }
+        for pane_id in self.attention_panes.difference(&next_attention) {
+            self.flash_deadlines.remove(pane_id);
+        }
+
+        self.attention_panes = next_attention;
+        self.choir_status = ChoirStatus::Ready(snapshot);
+    }
+
+    fn apply_choir_status_error(&mut self, status: ChoirStatus) {
+        self.attention_panes.clear();
+        self.flash_deadlines.clear();
+        self.choir_status = status;
+    }
+
     fn rebuild_pane_map(&mut self) {
         if let Some(ref manifest) = self.pane_manifest {
             self.pane_to_tab = tab_pane_map::build_pane_to_tab_map(&self.tabs, manifest);
@@ -307,7 +381,9 @@ impl State {
 
     fn has_active_flashes(&self) -> bool {
         let now = unix_now_ms();
-        self.flash_deadlines.values().any(|&deadline| now < deadline)
+        self.flash_deadlines
+            .values()
+            .any(|&deadline| now < deadline)
     }
 
     fn cleanup_expired_flashes(&mut self) -> bool {
@@ -441,7 +517,9 @@ mod tests {
     #[test]
     fn test_merge_sessions_newer_wins() {
         let mut state = State::default();
-        state.sessions.insert(1, make_session(1, Activity::Thinking, 100));
+        state
+            .sessions
+            .insert(1, make_session(1, Activity::Thinking, 100));
 
         let mut incoming = BTreeMap::new();
         incoming.insert(1, make_session(1, Activity::Done, 200));
@@ -455,7 +533,9 @@ mod tests {
     #[test]
     fn test_merge_sessions_older_loses() {
         let mut state = State::default();
-        state.sessions.insert(1, make_session(1, Activity::Done, 200));
+        state
+            .sessions
+            .insert(1, make_session(1, Activity::Done, 200));
 
         let mut incoming = BTreeMap::new();
         incoming.insert(1, make_session(1, Activity::Thinking, 100));
@@ -469,7 +549,9 @@ mod tests {
     #[test]
     fn test_merge_sessions_equal_timestamp_replaces() {
         let mut state = State::default();
-        state.sessions.insert(1, make_session(1, Activity::Thinking, 100));
+        state
+            .sessions
+            .insert(1, make_session(1, Activity::Thinking, 100));
 
         let mut incoming = BTreeMap::new();
         incoming.insert(1, make_session(1, Activity::Done, 100));
@@ -537,7 +619,10 @@ mod tests {
         assert_eq!(deserialized.len(), 5);
         assert_eq!(deserialized.get(&1).unwrap().activity, Activity::Init);
         assert_eq!(deserialized.get(&2).unwrap().activity, Activity::Thinking);
-        assert_eq!(deserialized.get(&3).unwrap().activity, Activity::Tool("Bash".into()));
+        assert_eq!(
+            deserialized.get(&3).unwrap().activity,
+            Activity::Tool("Bash".into())
+        );
         assert_eq!(deserialized.get(&4).unwrap().activity, Activity::Done);
         assert_eq!(deserialized.get(&5).unwrap().activity, Activity::Idle);
     }

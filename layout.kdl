@@ -6,9 +6,11 @@
 
 layout {
     default_tab_template {
-        children
-        pane size=1 borderless=true {
+        pane size=2 borderless=true {
             plugin location="file:~/.config/zellij/plugins/zjbar.wasm" {
+                // -- Choir status source --
+                // choir_socket ".choir/server.sock"
+
                 // -- Bar background --
                 // bar_bg "#1a1b26"
 
@@ -63,7 +65,7 @@ layout {
                 // mode_tmux_bg "#7aa2f7"
                 // mode_tmux_fg "#16161e"
 
-                // -- Claude activity icon colors --
+                // -- Choir lifecycle icon colors --
                 // activity_init_color "#7aa2f7"
                 // activity_thinking_color "#bb9af7"
                 // activity_tool_color "#ff9e64"
@@ -84,6 +86,10 @@ layout {
                 // tab_fullscreen_indicator " 󰊓"
                 // tab_floating_indicator " 󰹙"
             }
+        }
+        children
+        pane size=1 borderless=true {
+            plugin location="zellij:status-bar"
         }
     }
 }

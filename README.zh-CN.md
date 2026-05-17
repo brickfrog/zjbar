@@ -2,21 +2,27 @@
 
 [English](README.md) | 简体中文
 
-一个 Zellij 状态栏插件，采用 Tokyo Night powerline 主题，并可选集成 AI 编程工具活动状态显示。
+一个 Zellij 状态栏插件，采用 Tokyo Night powerline 主题，并从 [choir](https://github.com/brickfrog/choir) 获取权威的代理状态。
+
+这是面向 choir 工作流的 [imroc/zjbar](https://github.com/imroc/zjbar) 自有 fork。fork 名称仍为 `zjbar`；上游 MIT 署名保留在 [LICENSE](LICENSE) 中。
 
 ## 功能特性
 
-- **Powerline 标签栏** — Tokyo Night 主题标签栏，段落之间使用尖锐的 powerline 箭头
+- **Powerline 标签栏** — Tokyo Night 主题、可点击的标签行，段落之间使用尖锐的 powerline 箭头
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
-- **可点击标签** — 点击任意标签即可切换
-- **可选的 AI 编程工具集成** — 实时活动指示器、权限闪烁、桌面通知、点击聚焦（支持 Claude Code、CodeBuddy、Codex、OpenCode、Gemini CLI 及其他兼容工具）
-- **多实例同步** — 所有 Zellij 标签页展示所有 AI 会话的统一视图
+- **Choir 状态源** — 轮询 `.choir/server.sock` 的类型化 `status_bar_state` 快照；不使用进程名推断
+- **Choir 状态行** — 在标签行下方渲染 root/TL 与按父代理分组的叶子代理，保留原生标签导航体验
+- **原生快捷键栏** — 保留 Zellij 原来的底部 status-bar 插件，用于显示快捷键提示
+- **点击聚焦窗格** — 点击任意 choir 代理标签即可聚焦对应的 Zellij pane
+- **优雅降级** — socket 不可达时显示 `no choir`，服务端 schema 更新时显示 `schema ahead`
 
 ## 安装
 
 ### 前置条件
 
 - [Zellij](https://zellij.dev)
+- `PATH` 中可用的 Python 3（WASM 插件通过宿主侧 UDS 桥接使用）
+- choir 在 `.choir/server.sock` 上暴露 `status_bar_state` MCP 命令
 
 ### 方式一：使用发布版二进制文件
 
@@ -25,9 +31,14 @@
 ```kdl
 layout {
     default_tab_template {
+        pane size=2 borderless=true {
+            plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
+                choir_socket ".choir/server.sock"
+            }
+        }
         children
         pane size=1 borderless=true {
-            plugin location="https://github.com/imroc/zjbar/releases/download/v1.2.0/zjbar.wasm"
+            plugin location="zellij:status-bar"
         }
     }
 }
@@ -46,7 +57,7 @@ zellij --layout ~/.config/zellij/layouts/zjbar.kdl
 前置条件：[Rust](https://rustup.rs)
 
 ```bash
-git clone https://github.com/imroc/zjbar.git
+git clone https://github.com/brickfrog/zjbar.git
 cd zjbar
 make install
 ```
@@ -57,101 +68,21 @@ make install
 zellij --layout zjbar
 ```
 
-## AI 工具集成（可选）
+## Choir 集成
 
-zjbar 支持多种 AI 编程工具。每种工具通过自己的桥接方式将事件转发给 zjbar 插件（通过 `zellij pipe`）。
-
-### Claude Code / CodeBuddy
-
-安装 zjbar 插件以自动注册 hook：
-
-```
-/plugin marketplace add imroc/zjbar
-/plugin install zjbar@zjbar
-```
-
-重启 Claude Code / CodeBuddy 使 hook 生效。
-
-更新到最新版本：
-
-```
-/plugin update
-```
-
-### OpenCode
-
-在 `opencode.json` 中添加 zjbar 插件：
+zjbar 每秒轮询一次 choir Unix domain socket，并发送换行分帧的 JSON-RPC MCP 请求：
 
 ```json
-{
-  "plugin": ["zjbar-opencode@latest"]
-}
+{"jsonrpc":"2.0","id":"zjbar-status-bar-state","method":"tools/call","params":{"name":"status_bar_state","arguments":{}}}
 ```
 
-然后在使用 zjbar 布局的 Zellij 会话中启动 OpenCode，活动指示器将自动显示。
+响应 payload 必须匹配 [protocol/status_bar_state.json](protocol/status_bar_state.json)。渲染器只消费这个类型化快照；它不会检查进程名，也不会从 Claude/Codex/OpenCode/Gemini hook 事件中推断状态。
 
-更新时重启 OpenCode 即可——因为配置了 `@latest`，它会自动拉取最新版本。
+在 choir 暴露 `status_bar_state` 之前，或 `.choir/server.sock` 不可达时，zjbar 会渲染紧凑的 `no choir` 指示器。如果服务端返回的 `schema_version` 大于客户端支持版本，zjbar 会渲染 `schema ahead vN`，并拒绝渲染任何 pane 字段。
 
-### Codex CLI
+旧 hook 脚本仍保留在仓库中，方便上游兼容维护；但这个 fork 的状态渲染由 choir 状态驱动。
 
-配置 Codex 使用 zjbar 通知脚本：
-
-```bash
-make install-codex-hooks
-```
-
-这会将通知脚本和图标复制到 `~/.codex/zjbar/`，并在 Codex 配置文件（`~/.codex/config.toml`）中添加 `notify` 配置项。当 Codex 完成一个 turn 时，zjbar 会显示 Done 指示器并发送包含任务摘要的桌面通知。安装后可安全删除 repo。可通过 `CODEX_HOME` 环境变量覆盖 Codex 配置目录。
-
-更新时从最新 repo 重新运行 `make install-codex-hooks` 即可。
-
-卸载：
-
-```bash
-make uninstall-codex-hooks
-```
-
-### Gemini CLI
-
-首先，克隆仓库（或下载）：
-
-```bash
-git clone https://github.com/imroc/zjbar.git
-cd zjbar
-```
-
-然后安装 hooks：
-
-```bash
-make install-gemini-hooks
-```
-
-这会将 hook 脚本复制到 `~/.gemini/zjbar/`，并在 `~/.gemini/settings.json` 中注册 hooks。安装后仓库可以安全删除。
-
-卸载：
-
-```bash
-make uninstall-gemini-hooks
-```
-
-zjbar 会追踪 Gemini 的完整代理生命周期：思考中、工具使用和完成状态。
-
-### 其他工具
-
-zjbar 使用统一的 JSON 事件协议。任何 AI 编程工具都可以通过 `zellij pipe --name zjbar` 发送事件来集成。详见[工作原理](#工作原理)部分。
-
-### 桌面通知（可选）
-
-```bash
-brew install terminal-notifier
-```
-
-安装后，默认会在 `PermissionRequest`、`Notification` 和 `Stop` 事件时发送桌面通知。通知包含从 AI 工具对话记录中提取的**上下文感知消息摘要**：
-
-- **Stop** — 最后一条助手消息 + 工具使用统计（如 `📝2 ✏️3 ▶5`）
-- **PermissionRequest** — 请求权限的具体命令或文件路径
-- **Notification** — AI 工具发送的通知消息
-
-可以通过 `~/.config/zellij/plugins/zjbar.json` 或**设置菜单**（点击状态栏中的 session 名称）自定义通知事件和通知模式：
+运行时设置（`flash`、`elapsed_time`、`notifications`）仍存储在 `~/.config/zellij/plugins/zjbar.json` 中，可通过设置菜单（点击 session 名称）修改：
 
 ```json
 {
@@ -162,30 +93,26 @@ brew install terminal-notifier
 }
 ```
 
-- **`flash`** — `brief` | `persist` | `off`（默认：`brief`）。权限请求时 tab 背景闪烁模式。
-- **`elapsed_time`** — `true` | `false`（默认：`true`）。在每个 tab 上显示距上次 AI 工具活动的耗时。
-- **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。设为 `unfocused` 时，仅在终端不在前台时发送通知。
-- **`notify_events`** — 触发通知的 hook 事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
+- **`flash`** — `brief` | `persist` | `off`（默认：`brief`）。Choir attention 脉冲使用 flash 颜色。
+- **`elapsed_time`** — `true` | `false`（默认：`true`）。为旧 tab 渲染辅助逻辑保留。
+- **`notifications`** — `always` | `unfocused` | `off`（默认：`always`）。为旧 hook 脚本保留；choir attention 触发 notify-send 不在此 fork 范围内。
+- **`notify_events`** — 旧 hook 通知事件数组（默认：`["PermissionRequest", "Notification", "Stop"]`）
 
-## 活动符号
+## 生命周期符号
 
-集成 AI 编程工具（Claude Code、Codex、OpenCode、Gemini CLI 等）后，zjbar 在每个标签上显示实时活动指示器：
+Choir lifecycle 值渲染为：
 
-| 符号 | 含义           | Claude Code | CodeBuddy | Gemini CLI | OpenCode | Codex |
-| ---- | -------------- | :---------: | :-------: | :--------: | :------: | :---: |
-| ◆    | 会话启动中     |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ●    | 思考中         |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⚡   | 执行 Bash 命令 |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ◉    | 读取/搜索文件  |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ✎    | 编辑/写入文件  |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⊜    | 生成子代理     |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ◈    | 网页搜索/获取  |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⚙    | 其他工具       |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ▶    | 等待用户输入   |      ✔      |     ✔     |            |          |       |
-| ⚠    | 等待权限确认   |      ✔      |     ✔     |            |    ✔     |       |
-| ✓    | 完成           |      ✔      |     ✔     |     ✔      |    ✔     |   ✔   |
+| 符号 | Lifecycle              |
+| ---- | ---------------------- |
+| ⏳   | `working`              |
+| 👁   | `review_owned`         |
+| ✎    | `changes_requested`    |
+| ✓    | `done`                 |
+| ✗    | `failed`               |
+| ⊖    | `exitable`             |
+| 🔴   | `waiting_for_red_gate` |
 
-> **注意：** Codex CLI 仅提供 `agent-turn-complete` 事件（对应 ✓ 完成），不支持其他细粒度状态。Gemini CLI 没有权限确认和等待用户输入的 hook 事件。
+Pane 标签还会在字段存在时显示 PR 编号、未解决 review thread 数量和 CI 汇总。当 `attention_needed` 为 true 时，对应 pane 标签会使用配置的 flash 颜色脉冲约两秒。
 
 ## 配置
 
@@ -195,6 +122,9 @@ brew install terminal-notifier
 
 ```kdl
 plugin location="zjbar.wasm" {
+    // Choir 状态源
+    choir_socket ".choir/server.sock"
+
     // 颜色：任意 "#rrggbb" 十六进制值
     bar_bg          "#1a1b26"
     session_bg      "#7aa2f7"
@@ -209,7 +139,7 @@ plugin location="zjbar.wasm" {
     //       search, entersearch, session, prompt, renametab,
     //       renamepane, tmux
 
-    // 活动图标颜色
+    // 生命周期图标颜色
     activity_thinking_color "#bb9af7"
     activity_tool_color     "#ff9e64"
 
@@ -227,17 +157,9 @@ plugin location="zjbar.wasm" {
 
 ## 工作原理
 
-1. **WASM 插件** — 在 Zellij 内运行，渲染状态栏，管理状态
-2. **Hook / 插件桥接**（可选） — 通过 `zellij pipe` 转发 AI 编程工具事件
-
-```
-Claude Code hook → zjbar-hook.sh        → zellij pipe → 插件 → 渲染
-Codex notify     → zjbar-codex-notify.sh → zellij pipe → 插件 → 渲染
-OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → 插件 → 渲染
-Gemini CLI hook  → zjbar-gemini-hook.sh  → zellij pipe → 插件 → 渲染
-```
-
-所有集成使用统一的 JSON payload，通过 `source` 字段标识 AI 工具来源。
+1. **WASM 插件** — 作为顶部 chrome 在 Zellij 内运行，渲染标签行和 choir 状态行，管理点击区域和 flash timing。
+2. **宿主侧 UDS 桥接** — Zellij `run_command` 调用 Python 3 连接 `.choir/server.sock`，发送 `status_bar_state` JSON-RPC 请求，并返回一条换行分帧响应。
+3. **类型化快照渲染器** — Rust 按 v1 schema 解析响应，只渲染已识别字段。默认布局把 zjbar 放在顶部，恢复 Zellij 原生快捷键/状态栏到底部，并把 choir 状态折叠到 zjbar 的第 2 行；更高的 zjbar pane 可使用额外行展示层级。所有失败都会 fail closed。
 
 ## 卸载
 

@@ -2,21 +2,27 @@
 
 English | [简体中文](README.zh-CN.md)
 
-A Zellij status bar plugin with a Tokyo Night powerline theme and optional AI coding agent activity awareness.
+A Zellij status bar plugin with a Tokyo Night powerline theme and authoritative [choir](https://github.com/brickfrog/choir) agent status awareness.
+
+This is an owned fork of [imroc/zjbar](https://github.com/imroc/zjbar) for choir workflows. The fork name remains `zjbar`; upstream MIT attribution is preserved in [LICENSE](LICENSE).
 
 ## Features
 
-- **Powerline tab bar** — Tokyo Night themed tab bar with sharp powerline arrows between segments
+- **Powerline tab bar** — Tokyo Night themed, clickable tab row with sharp powerline arrows between segments
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
-- **Clickable tabs** — click any tab to switch
-- **Optional AI coding agent integration** — live activity indicators, permission flash, desktop notifications, and click-to-focus (supports Claude Code, CodeBuddy, Codex, OpenCode, Gemini CLI, and other compatible tools)
-- **Multi-instance sync** — all Zellij tabs show a unified view of all AI sessions
+- **Choir status source** — polls `.choir/server.sock` for the typed `status_bar_state` snapshot; no process-name inference is used
+- **Choir status row** — renders root/TL and grouped leaf agents below the tab row, preserving native tab navigation
+- **Native shortcut strip** — keeps Zellij's original bottom status-bar plugin for keybinding hints
+- **Click-to-focus panes** — click any choir agent pill to focus its Zellij pane
+- **Graceful degradation** — shows `no choir` when the socket is unreachable and `schema ahead` when the server uses a newer schema
 
 ## Install
 
 ### Prerequisites
 
 - [Zellij](https://zellij.dev)
+- Python 3 on `PATH` (used by the WASM plugin's host-side UDS bridge)
+- choir with the `status_bar_state` MCP command exposed on `.choir/server.sock`
 
 ### Option 1: Use release binary
 
@@ -25,9 +31,14 @@ Add the zjbar plugin to your Zellij layout file (e.g. `~/.config/zellij/layouts/
 ```kdl
 layout {
     default_tab_template {
+        pane size=2 borderless=true {
+            plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
+                choir_socket ".choir/server.sock"
+            }
+        }
         children
         pane size=1 borderless=true {
-            plugin location="https://github.com/imroc/zjbar/releases/download/v1.2.0/zjbar.wasm"
+            plugin location="zellij:status-bar"
         }
     }
 }
@@ -46,7 +57,7 @@ zellij --layout ~/.config/zellij/layouts/zjbar.kdl
 Prerequisites: [Rust](https://rustup.rs)
 
 ```bash
-git clone https://github.com/imroc/zjbar.git
+git clone https://github.com/brickfrog/zjbar.git
 cd zjbar
 make install
 ```
@@ -57,101 +68,21 @@ This builds the WASM binary, copies it to `~/.config/zellij/plugins/`, and insta
 zellij --layout zjbar
 ```
 
-## AI Tool Integration (optional)
+## Choir Integration
 
-zjbar supports multiple AI coding agents. Each tool uses its own bridge to forward events to the zjbar plugin via `zellij pipe`.
-
-### Claude Code / CodeBuddy
-
-Install the zjbar plugin to automatically register hooks:
-
-```
-/plugin marketplace add imroc/zjbar
-/plugin install zjbar@zjbar
-```
-
-Restart Claude Code / CodeBuddy for hooks to take effect.
-
-To update to the latest version:
-
-```
-/plugin update
-```
-
-### OpenCode
-
-Add the zjbar plugin to your `opencode.json`:
+zjbar polls the choir Unix domain socket once per second and sends a newline-framed JSON-RPC MCP request:
 
 ```json
-{
-  "plugin": ["zjbar-opencode@latest"]
-}
+{"jsonrpc":"2.0","id":"zjbar-status-bar-state","method":"tools/call","params":{"name":"status_bar_state","arguments":{}}}
 ```
 
-Then start OpenCode inside a Zellij session with the zjbar layout — activity indicators will appear automatically.
+The response payload must match [protocol/status_bar_state.json](protocol/status_bar_state.json). The renderer consumes only this typed snapshot; it does not inspect process names and does not infer state from Claude/Codex/OpenCode/Gemini hook events.
 
-To update, restart OpenCode — it will automatically fetch the latest version since `@latest` is specified.
+Until choir exposes `status_bar_state`, or whenever `.choir/server.sock` is unreachable, zjbar renders a compact `no choir` indicator. If the server returns a snapshot with `schema_version` greater than the client-supported version, zjbar renders `schema ahead vN` and refuses to render per-pane fields.
 
-### Codex CLI
+The old hook scripts are still present in the repository for upstream compatibility work, but this fork's status rendering is driven by choir state.
 
-Configure Codex to use the zjbar notify script:
-
-```bash
-make install-codex-hooks
-```
-
-This copies the notify script and icon to `~/.codex/zjbar/` and adds a `notify` entry to your Codex config (`~/.codex/config.toml`). When Codex finishes a turn, zjbar shows the Done indicator and sends a desktop notification with the task summary. The repo can be safely deleted after installation. Override the Codex config directory with `CODEX_HOME` env var.
-
-To update, re-run `make install-codex-hooks` from the latest repo.
-
-To uninstall:
-
-```bash
-make uninstall-codex-hooks
-```
-
-### Gemini CLI
-
-First, clone the repo (or download it):
-
-```bash
-git clone https://github.com/imroc/zjbar.git
-cd zjbar
-```
-
-Then install the hooks:
-
-```bash
-make install-gemini-hooks
-```
-
-This copies the hook script to `~/.gemini/zjbar/` and registers the hooks in `~/.gemini/settings.json`. The repo can be safely deleted after installation.
-
-To uninstall:
-
-```bash
-make uninstall-gemini-hooks
-```
-
-zjbar tracks Gemini's full agent lifecycle: Thinking, Tool use, and Done states.
-
-### Other tools
-
-zjbar uses a unified JSON event protocol. Any AI coding tool can integrate by sending events via `zellij pipe --name zjbar`. See the [How It Works](#how-it-works) section for details.
-
-### Desktop notifications (optional)
-
-```bash
-brew install terminal-notifier
-```
-
-When installed, desktop notifications are sent for `PermissionRequest`, `Notification`, and `Stop` events by default. Notifications include **context-aware message summaries** extracted from the AI tool's transcript:
-
-- **Stop** — last assistant message + tool usage stats (e.g. `📝2 ✏️3 ▶5`)
-- **PermissionRequest** — the specific command or file path being requested
-- **Notification** — the notification message from the AI tool
-
-You can customize which events trigger notifications and the notification mode via `~/.config/zellij/plugins/zjbar.json` or the **settings menu** (click the session name in the status bar):
+Runtime settings (`flash`, `elapsed_time`, `notifications`) are still stored in `~/.config/zellij/plugins/zjbar.json` and can be changed via the settings menu (click the session name):
 
 ```json
 {
@@ -162,30 +93,26 @@ You can customize which events trigger notifications and the notification mode v
 }
 ```
 
-- **`flash`** — `brief` | `persist` | `off` (default: `brief`). Tab background flash on permission request.
-- **`elapsed_time`** — `true` | `false` (default: `true`). Show elapsed time since last AI tool activity per tab.
-- **`notifications`** — `always` | `unfocused` | `off` (default: `always`). When set to `unfocused`, notifications only fire when the terminal is not the frontmost app.
-- **`notify_events`** — array of hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
+- **`flash`** — `brief` | `persist` | `off` (default: `brief`). Choir attention pulses use the flash colors.
+- **`elapsed_time`** — `true` | `false` (default: `true`). Retained for legacy tab rendering helpers.
+- **`notifications`** — `always` | `unfocused` | `off` (default: `always`). Retained for legacy hook scripts; notify-send from choir attention is out of scope for this fork.
+- **`notify_events`** — array of legacy hook events to notify on (default: `["PermissionRequest", "Notification", "Stop"]`)
 
-## Activity Symbols
+## Lifecycle Symbols
 
-When integrated with an AI coding agent (Claude Code, Codex, OpenCode, Gemini CLI, etc.), zjbar shows live activity indicators on each tab:
+Choir lifecycle values render as:
 
-| Symbol | Meaning                   | Claude Code | CodeBuddy | Gemini CLI | OpenCode | Codex |
-| ------ | ------------------------- | :---------: | :-------: | :--------: | :------: | :---: |
-| ◆      | Session starting          |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ●      | Thinking                  |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⚡     | Running Bash              |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ◉      | Reading / searching files |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ✎      | Editing / writing files   |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⊜      | Spawning subagent         |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ◈      | Web search / fetch        |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ⚙      | Other tool                |      ✔      |     ✔     |     ✔      |    ✔     |       |
-| ▶      | Waiting for user prompt   |      ✔      |     ✔     |            |          |       |
-| ⚠      | Waiting for permission    |      ✔      |     ✔     |            |    ✔     |       |
-| ✓      | Done                      |      ✔      |     ✔     |     ✔      |    ✔     |   ✔   |
+| Symbol | Lifecycle              |
+| ------ | ---------------------- |
+| ⏳     | `working`              |
+| 👁     | `review_owned`         |
+| ✎      | `changes_requested`    |
+| ✓      | `done`                 |
+| ✗      | `failed`               |
+| ⊖      | `exitable`             |
+| 🔴     | `waiting_for_red_gate` |
 
-> **Note:** Codex CLI only provides the `agent-turn-complete` event (mapped to ✓ Done) and does not support other granular states. Gemini CLI lacks hook events for permission requests and user input prompts.
+Pane pills also show PR number, unresolved thread count, and CI rollup when those fields are present. When `attention_needed` is true, the pane pill pulses with the configured flash colors for about two seconds.
 
 ## Configuration
 
@@ -195,6 +122,9 @@ Behavioral settings (`flash`, `elapsed_time`, `notifications`) are stored in `~/
 
 ```kdl
 plugin location="zjbar.wasm" {
+    // Choir status source
+    choir_socket ".choir/server.sock"
+
     // Colors: any "#rrggbb" hex value
     bar_bg          "#1a1b26"
     session_bg      "#7aa2f7"
@@ -209,7 +139,7 @@ plugin location="zjbar.wasm" {
     //        search, entersearch, session, prompt, renametab,
     //        renamepane, tmux
 
-    // Activity icon colors
+    // Lifecycle icon colors
     activity_thinking_color "#bb9af7"
     activity_tool_color     "#ff9e64"
 
@@ -227,17 +157,9 @@ See [layout.kdl](layout.kdl) for the full list of available options with default
 
 ## How It Works
 
-1. **WASM plugin** — runs inside Zellij, renders the status bar, manages state
-2. **Hook / plugin bridge** (optional) — forwards AI coding agent events via `zellij pipe`
-
-```
-Claude Code hook → zjbar-hook.sh        → zellij pipe → plugin → render
-Codex notify     → zjbar-codex-notify.sh → zellij pipe → plugin → render
-OpenCode plugin  → zjbar-opencode-plugin → zellij pipe → plugin → render
-Gemini CLI hook  → zjbar-gemini-hook.sh  → zellij pipe → plugin → render
-```
-
-All integrations use a unified JSON payload with a `source` field to identify the AI tool.
+1. **WASM plugin** — runs inside Zellij as the top chrome, renders the tab row plus the choir status row, manages click regions and flash timing.
+2. **Host-side UDS bridge** — Zellij `run_command` invokes Python 3 to connect to `.choir/server.sock`, send the `status_bar_state` JSON-RPC request, and return one newline-framed response.
+3. **Typed snapshot renderer** — Rust parses the response against the v1 schema and renders only recognized fields. The default layout keeps zjbar at the top, restores Zellij's native shortcut/status strip at the bottom, and collapses choir state onto zjbar's second row; larger zjbar panes can use extra rows for hierarchy. All failures are fail-closed.
 
 ## Uninstall
 

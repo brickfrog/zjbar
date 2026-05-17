@@ -73,7 +73,11 @@ const D_MENU_DIM_LABEL: Color = (100, 100, 100);
 const D_MENU_CLOSE: Color = (255, 60, 60);
 
 /// All configuration parsed from the KDL plugin block.
+#[allow(dead_code)]
 pub struct BarConfig {
+    // Choir status source
+    pub choir_socket: String,
+
     // Global
     pub bar_bg: Color,
 
@@ -164,6 +168,7 @@ pub struct BarConfig {
 macro_rules! color_fields {
     ($config:expr, $( $field:ident : $key:literal => $default:expr ),* $(,)?) => {
         Self {
+            choir_socket: get_str($config, "choir_socket", ".choir/server.sock").to_string(),
             $( $field: get_color($config, $key, $default), )*
             tab_fullscreen_indicator: get_str($config, "tab_fullscreen_indicator", " 󰊓").to_string(),
             tab_floating_indicator: get_str($config, "tab_floating_indicator", " 󰹙").to_string(),
@@ -262,6 +267,7 @@ impl BarConfig {
     }
 
     /// Get activity icon color for the given activity.
+    #[allow(dead_code)]
     pub fn activity_color(&self, activity: &crate::state::Activity) -> Color {
         use crate::state::Activity;
         match activity {

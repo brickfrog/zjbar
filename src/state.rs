@@ -1,6 +1,7 @@
+use crate::choir_status::ChoirStatus;
 use crate::config::BarConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 use zellij_tile::prelude::*;
 
@@ -213,6 +214,7 @@ pub struct MenuClickRegion {
 // -- Tab click regions --
 
 pub struct ClickRegion {
+    pub row: isize,
     pub start_col: usize,
     pub end_col: usize,
     pub tab_index: usize,
@@ -225,6 +227,9 @@ pub struct ClickRegion {
 #[derive(Default)]
 pub struct State {
     pub config: BarConfig,
+    pub choir_status: ChoirStatus,
+    pub choir_poll_inflight: bool,
+    pub choir_last_poll_ms: u64,
     pub settings: Settings,
     pub view_mode: ViewMode,
     pub menu_click_regions: Vec<MenuClickRegion>,
@@ -238,6 +243,7 @@ pub struct State {
     pub click_regions: Vec<ClickRegion>,
     /// pane_id -> flash deadline in ms (for waiting animation)
     pub flash_deadlines: HashMap<u32, u64>,
+    pub attention_panes: HashSet<u32>,
     pub zellij_session_name: Option<String>,
     pub term_program: Option<String>,
     pub input_mode: InputMode,

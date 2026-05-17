@@ -86,7 +86,7 @@ release: build
 	if [ -n "$$PREV" ]; then \
 		NOTES=$$(printf '## What'\''s Changed\n\n'; \
 			git log --pretty=format:'- %s' $$PREV..$(TAG); \
-			printf '\n\n**Full Changelog**: https://github.com/imroc/zjbar/compare/%s...$(TAG)\n' "$$PREV"); \
+			printf '\n\n**Full Changelog**: https://github.com/brickfrog/zjbar/compare/%s...$(TAG)\n' "$$PREV"); \
 	else \
 		NOTES="Initial release"; \
 	fi; \

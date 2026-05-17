@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickfrog/zjbar/protocol/status_bar_state.json",
+  "title": "Choir status_bar_state snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "taken_at_ms", "panes"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Wire schema version. Clients must refuse schema versions newer than they know."
+    },
+    "taken_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix timestamp in milliseconds when the snapshot was taken."
+    },
+    "panes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pane" }
+    }
+  },
+  "$defs": {
+    "pane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zellij_pane_id",
+        "agent_id",
+        "role",
+        "agent_type",
+        "lifecycle",
+        "pr_number",
+        "unresolved_threads",
+        "ci_rollup",
+        "attention_needed",
+        "parent_agent_id",
+        "last_activity_unix"
+      ],
+      "properties": {
+        "zellij_pane_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": ["tl", "dev", "worker", "root"]
+        },
+        "agent_type": {
+          "type": "string",
+          "enum": ["codex", "claude", "moon_pilot", "gemini", "cursor_agent"]
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "working",
+            "review_owned",
+            "changes_requested",
+            "done",
+            "failed",
+            "exitable",
+            "waiting_for_red_gate"
+          ]
+        },
+        "pr_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "unresolved_threads": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ci_rollup": {
+          "type": "string",
+          "enum": ["success", "in_progress", "failure", "unknown", "no_checks"]
+        },
+        "attention_needed": {
+          "type": "boolean"
+        },
+        "parent_agent_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "last_activity_unix": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
