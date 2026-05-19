@@ -30,6 +30,7 @@ register_plugin!(State);
 impl ZellijPlugin for State {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.config = BarConfig::from_kdl(&configuration);
+        self.initial_cwd = Some(get_plugin_ids().initial_cwd);
 
         subscribe(&[
             EventType::TabUpdate,
@@ -235,6 +236,7 @@ impl ZellijPlugin for State {
             }
             "zjbar:request" => {
                 self.broadcast_sessions();
+                self.broadcast_choir_status();
                 false
             }
             "zjbar:sync" => {
@@ -246,6 +248,19 @@ impl ZellijPlugin for State {
                         }
                         Err(e) => {
                             eprintln!("[zjbar] failed to parse sync payload: {e}");
+                        }
+                    }
+                }
+                false
+            }
+            "zjbar:choir_status" => {
+                if let Some(ref payload) = pipe_message.payload {
+                    match serde_json::from_str::<StatusBarState>(payload) {
+                        Ok(snapshot) => {
+                            return self.merge_choir_snapshot(snapshot);
+                        }
+                        Err(e) => {
+                            eprintln!("[zjbar] failed to parse choir status sync payload: {e}");
                         }
                     }
                 }
@@ -290,12 +305,23 @@ impl State {
         self.choir_poll_inflight = true;
         let mut ctx = BTreeMap::new();
         ctx.insert("type".into(), "choir_status_poll".into());
-        let cmd = choir_status::poll_command(&self.config.choir_socket);
+        let initial_cwd = self
+            .initial_cwd
+            .as_ref()
+            .map(|cwd| cwd.to_string_lossy().into_owned());
+        let cmd = choir_status::poll_command(&self.config.choir_socket, initial_cwd.as_deref());
         run_command(&["sh", "-c", &cmd], ctx);
         false
     }
 
-    fn apply_choir_snapshot(&mut self, snapshot: StatusBarState) {
+    fn merge_choir_snapshot(&mut self, snapshot: StatusBarState) -> bool {
+        let should_apply = match &self.choir_status {
+            ChoirStatus::Ready(existing) => snapshot.taken_at_ms >= existing.taken_at_ms,
+            _ => true,
+        };
+        if !should_apply {
+            return false;
+        }
         let now = unix_now_ms();
         let next_attention: HashSet<u32> = snapshot
             .panes
@@ -314,9 +340,23 @@ impl State {
 
         self.attention_panes = next_attention;
         self.choir_status = ChoirStatus::Ready(snapshot);
+        self.choir_last_ready_ms = now;
+        true
+    }
+
+    fn apply_choir_snapshot(&mut self, snapshot: StatusBarState) {
+        if self.merge_choir_snapshot(snapshot) {
+            self.broadcast_choir_status();
+        }
     }
 
     fn apply_choir_status_error(&mut self, status: ChoirStatus) {
+        if matches!(status, ChoirStatus::NoChoir)
+            && self.choir_last_ready_ms != 0
+            && unix_now_ms().saturating_sub(self.choir_last_ready_ms) < CHOIR_POLL_INTERVAL_MS * 5
+        {
+            return;
+        }
         self.attention_panes.clear();
         self.flash_deadlines.clear();
         self.choir_status = status;
@@ -421,6 +461,21 @@ impl State {
         pipe_message_to_plugin(msg);
     }
 
+    fn broadcast_choir_status(&self) {
+        let ChoirStatus::Ready(snapshot) = &self.choir_status else {
+            return;
+        };
+        let mut msg = MessageToPlugin::new("zjbar:choir_status");
+        msg.message_payload = Some(match serde_json::to_string(snapshot) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("[zjbar] failed to serialize choir status for sync: {e}");
+                return;
+            }
+        });
+        pipe_message_to_plugin(msg);
+    }
+
     fn broadcast_settings(&self) {
         let mut msg = MessageToPlugin::new("zjbar:settings");
         msg.message_payload = Some(match serde_json::to_string(&self.settings) {
@@ -501,6 +556,58 @@ mod tests {
             last_event_ts: ts,
             cwd: None,
         }
+    }
+
+    fn make_choir_snapshot(taken_at_ms: u64, lifecycle: choir_status::Lifecycle) -> StatusBarState {
+        StatusBarState {
+            schema_version: choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms,
+            panes: vec![choir_status::StatusBarPane {
+                zellij_pane_id: 1,
+                agent_id: "root".into(),
+                role: choir_status::ChoirRole::Tl,
+                agent_type: choir_status::AgentType::Codex,
+                lifecycle,
+                pr_number: None,
+                unresolved_threads: 0,
+                ci_rollup: choir_status::CiRollup::Unknown,
+                attention_needed: false,
+                parent_agent_id: None,
+                last_activity_unix: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn test_merge_choir_snapshot_newer_wins() {
+        let mut state = State::default();
+        assert!(
+            state.merge_choir_snapshot(make_choir_snapshot(200, choir_status::Lifecycle::Working,))
+        );
+        assert!(
+            !state.merge_choir_snapshot(make_choir_snapshot(100, choir_status::Lifecycle::Done,))
+        );
+
+        let ChoirStatus::Ready(snapshot) = state.choir_status else {
+            panic!("snapshot should remain ready");
+        };
+        assert_eq!(snapshot.taken_at_ms, 200);
+        assert_eq!(
+            snapshot.panes[0].lifecycle,
+            choir_status::Lifecycle::Working
+        );
+    }
+
+    #[test]
+    fn test_recent_choir_snapshot_ignores_local_no_choir_error() {
+        let mut state = State::default();
+        assert!(
+            state.merge_choir_snapshot(make_choir_snapshot(100, choir_status::Lifecycle::Working,))
+        );
+
+        state.apply_choir_status_error(ChoirStatus::NoChoir);
+
+        assert!(matches!(state.choir_status, ChoirStatus::Ready(_)));
     }
 
     #[test]

@@ -146,19 +146,68 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-pub fn poll_command(socket_path: &str) -> String {
+pub fn poll_command(socket_path: &str, initial_cwd: Option<&str>) -> String {
     let request = status_bar_state_jsonrpc_request();
     let request = request.trim_end();
+    let initial_cwd = initial_cwd
+        .map(|cwd| format!(" ZJBAR_PLUGIN_INITIAL_CWD={}", shell_quote(cwd)))
+        .unwrap_or_default();
     let script = r#"import os
 import socket
 import sys
 
 sock_path = os.environ.get('ZJBAR_CHOIR_SOCKET', '.choir/server.sock')
 request = os.environ['ZJBAR_CHOIR_REQUEST'] + '\n'
+def candidate_socket_paths(sock_path):
+    if os.path.isabs(sock_path):
+        return [sock_path]
+    candidates = []
+    def add(candidate):
+        candidates.append(candidate)
+    def add_parent_candidates(base):
+        if not base:
+            return
+        current = os.path.abspath(base)
+        while True:
+            add(os.path.join(current, sock_path))
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+    add(sock_path)
+    workspace = os.environ.get('CHOIR_WORKSPACE')
+    if workspace:
+        add(os.path.join(workspace, sock_path))
+    add_parent_candidates(os.environ.get('ZJBAR_PLUGIN_INITIAL_CWD'))
+    add_parent_candidates(os.environ.get('PWD'))
+    add_parent_candidates(os.getcwd())
+    seen = set()
+    unique = []
+    for candidate in candidates:
+        normalized = os.path.abspath(candidate)
+        if normalized not in seen:
+            seen.add(normalized)
+            unique.append(candidate)
+    return unique
+
 try:
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(0.35)
-    sock.connect(sock_path)
+    sock = None
+    last_exc = None
+    for candidate in candidate_socket_paths(sock_path):
+        try:
+            attempt = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            attempt.settimeout(0.35)
+            attempt.connect(candidate)
+            sock = attempt
+            break
+        except Exception as exc:
+            last_exc = exc
+            try:
+                attempt.close()
+            except Exception:
+                pass
+    if sock is None:
+        raise last_exc or FileNotFoundError(sock_path)
     sock.sendall(request.encode('utf-8'))
     data = b''
     while not data.endswith(b'\n') and len(data) < 1048576:
@@ -175,9 +224,10 @@ except Exception as exc:
     sys.exit(1)
 "#;
     format!(
-        "ZJBAR_CHOIR_SOCKET={} ZJBAR_CHOIR_REQUEST={} python3 - <<'PY'\n{}PY",
+        "ZJBAR_CHOIR_SOCKET={} ZJBAR_CHOIR_REQUEST={}{} python3 - <<'PY'\n{}PY",
         shell_quote(socket_path),
         shell_quote(request),
+        initial_cwd,
         script,
     )
 }
@@ -390,9 +440,17 @@ mod tests {
 
     #[test]
     fn poll_command_contains_socket_and_request() {
-        let command = poll_command(".choir/server.sock");
+        let command = poll_command(
+            ".choir/server.sock",
+            Some("/workspace/.choir/worktrees/leaf"),
+        );
         assert!(command.contains("ZJBAR_CHOIR_SOCKET='.choir/server.sock'"));
         assert!(command.contains("ZJBAR_CHOIR_REQUEST="));
         assert!(command.contains("AF_UNIX"));
+        assert!(command.contains("CHOIR_WORKSPACE"));
+        assert!(command.contains("ZJBAR_PLUGIN_INITIAL_CWD"));
+        assert!(command.contains("PWD"));
+        assert!(command.contains("os.getcwd()"));
+        assert!(command.contains("candidate_socket_paths"));
     }
 }

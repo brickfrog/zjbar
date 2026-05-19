@@ -1284,9 +1284,20 @@ fn inline_choir_entries(state: &State) -> Vec<StatusBarPane> {
         return Vec::new();
     };
 
+    let mut tab_pane_counts = std::collections::HashMap::new();
+    for (tab_idx, _) in state.pane_to_tab.values() {
+        *tab_pane_counts.entry(*tab_idx).or_insert(0usize) += 1;
+    }
+
     let mut entries: Vec<StatusBarPane> = Vec::new();
     for pane in snapshot.panes.iter().filter(|pane| {
-        !pane.role.is_top_level() && state.pane_to_tab.contains_key(&pane.zellij_pane_id)
+        if pane.role.is_top_level() {
+            false
+        } else if let Some((tab_idx, _)) = state.pane_to_tab.get(&pane.zellij_pane_id) {
+            tab_pane_counts.get(tab_idx).copied().unwrap_or(0) > 1
+        } else {
+            false
+        }
     }) {
         match entries
             .iter()
@@ -2450,6 +2461,71 @@ mod tests {
         assert!(buf.contains("Third Leaf Here"));
         assert!(buf.contains("✎"));
         assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 0 && region.pane_id == 7 && region.is_waiting));
+    }
+
+    #[test]
+    fn test_render_tabs_skips_synthetic_leaf_when_leaf_has_own_tab() {
+        let mut state = State::default();
+        state.tabs = vec![
+            TabInfo {
+                position: 0,
+                name: "Server".to_string(),
+                active: false,
+                ..Default::default()
+            },
+            TabInfo {
+                position: 1,
+                name: "TL".to_string(),
+                active: false,
+                ..Default::default()
+            },
+            TabInfo {
+                position: 2,
+                name: "Third Leaf Here".to_string(),
+                active: true,
+                ..Default::default()
+            },
+        ];
+        state.active_tab_index = Some(2);
+        state.pane_to_tab.insert(2, (1, "TL".to_string()));
+        state
+            .pane_to_tab
+            .insert(7, (2, "Third Leaf Here".to_string()));
+        state.pane_titles.insert(7, "Third Leaf Here".to_string());
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![
+                test_status_pane(
+                    2,
+                    "root",
+                    crate::choir_status::ChoirRole::Tl,
+                    Lifecycle::Working,
+                    None,
+                    200,
+                ),
+                test_status_pane(
+                    7,
+                    "root.third-leaf",
+                    crate::choir_status::ChoirRole::Dev,
+                    Lifecycle::ChangesRequested,
+                    Some("root"),
+                    210,
+                ),
+            ],
+        });
+
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_tabs(&mut state, &mut buf, &mut col, 220);
+
+        assert!(buf.contains("Third Leaf Here"));
+        assert!(buf.contains("✎"));
+        assert_eq!(state.click_regions.len(), 3);
+        assert!(!state
             .click_regions
             .iter()
             .any(|region| region.row == 0 && region.pane_id == 7 && region.is_waiting));

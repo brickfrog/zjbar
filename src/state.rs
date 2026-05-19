@@ -230,6 +230,7 @@ pub struct State {
     pub choir_status: ChoirStatus,
     pub choir_poll_inflight: bool,
     pub choir_last_poll_ms: u64,
+    pub choir_last_ready_ms: u64,
     pub settings: Settings,
     pub view_mode: ViewMode,
     pub menu_click_regions: Vec<MenuClickRegion>,
@@ -248,6 +249,7 @@ pub struct State {
     pub zellij_session_name: Option<String>,
     pub term_program: Option<String>,
     pub input_mode: InputMode,
+    pub initial_cwd: Option<std::path::PathBuf>,
 }
 
 #[cfg(test)]
