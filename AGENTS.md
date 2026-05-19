@@ -267,47 +267,18 @@ tmux -L zjbar_test kill-server
 - Color palette follows Tokyo Night. All color defaults are defined in `config.rs`.
 - After any feature change, check if `README.md` needs updating (e.g. new config options, changed behavior, new install steps). If so, update both `README.md` (English) and `README.zh-CN.md` (Chinese) directly without asking for confirmation.
 
-## Development Workflow: Fix → Release → Verify
-
-Users install zjbar through plugin systems (Claude Code plugin marketplace, OpenCode npm plugin, CodeBuddy plugin). This means they can update to the latest version with a simple plugin update command and restart. **Always release immediately after fixing a bug or completing a feature** — do not batch multiple changes before releasing.
+## Development Workflow: Fix → Verify → Commit
 
 The workflow for every code change is:
 
 1. **Fix/implement** the change
-2. **Build & test** locally (tmux test for WASM rendering, deploy to OpenCode caches for OpenCode plugin)
-3. **Bump version**: `make bump V=x.y.z` — updates all 7 version files, builds WASM, commits, and tags
-4. **Publish**: `make release` — pushes main + tag, creates GitHub Release, publishes npm package
-6. **Update local caches** for OpenCode plugin so the user can verify immediately:
+2. **Build & test** locally (tmux test for WASM rendering, deploy to OpenCode caches only when the OpenCode plugin changes)
+3. **Commit** the completed change with a concise semantic commit message
+4. **Update local caches** for OpenCode plugin changes so the user can verify immediately:
    ```bash
    cp opencode-plugin/dist/index.js ~/.config/opencode/node_modules/zjbar-opencode/dist/index.js
    cp opencode-plugin/dist/index.js ~/.cache/opencode/node_modules/zjbar-opencode/dist/index.js
    ```
-7. **Tell the user** the version number and what changed, so they can update and verify
+5. **Tell the user** what changed and what verification ran
 
-This fast iteration loop allows the user to test fixes within seconds of a release by running plugin update commands (`/plugin update` for Claude Code/CodeBuddy, restart for OpenCode).
-
-## Releasing a New Version
-
-`make bump V=x.y.z` automates the entire version bump process. It updates all version references, builds WASM (which updates `Cargo.lock`), commits, and tags — preventing any file from being missed.
-
-The files updated by `make bump`:
-
-1. **`Cargo.toml`** — `version = "x.y.z"`
-2. **`README.md`** — WASM download URL in the layout example (`releases/download/vX.Y.Z/zjbar.wasm`)
-3. **`README.zh-CN.md`** — same WASM download URL
-4. **`.claude-plugin/marketplace.json`** — both `version` fields
-5. **`.claude-plugin/plugin.json`** — `version` field
-6. **`opencode-plugin/package.json`** — `version` field (must match the release version)
-7. **`Cargo.lock`** — auto-updated by `cargo build`
-
-Full release workflow:
-
-```bash
-# 1. Bump version (updates all files, builds, commits, tags)
-make bump V=x.y.z
-
-# 2. Publish (pushes main + tag, creates GitHub Release, publishes npm)
-make release
-```
-
-npm authentication is configured via `~/.npmrc` (`_authToken`).
+Do **not** bump versions, tag commits, publish packages, create GitHub Releases, or push release artifacts unless the user explicitly asks for a release. The normal stopping point is a committed local change plus verification results.
