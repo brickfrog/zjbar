@@ -8,13 +8,13 @@
 
 ## 功能特性
 
-- **Powerline 标签栏** — Tokyo Night 主题、可点击的标签行，段落之间使用尖锐的 powerline 箭头
+- **统一 Powerline 导航栏** — Tokyo Night 主题、可点击的单行导航，先显示原生 Zellij tab，再显示 choir 叶子入口
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
 - **Choir 状态源** — 轮询 `.choir/server.sock` 的类型化 `status_bar_state` 快照；不使用进程名推断
-- **Choir 状态行** — 在标签行下方渲染 root/TL 与按父代理分组的叶子代理，保留原生标签导航体验
+- **Choir 状态折叠** — 在对应 tab 或叶子 pane 旁渲染生命周期符号，并折叠解析到同一个 Zellij pane 的重复代理
 - **原生快捷键栏** — 保留 Zellij 原来的底部 status-bar 插件，用于显示快捷键提示
-- **点击聚焦窗格** — 点击任意 choir 代理标签即可聚焦对应的 Zellij pane
-- **优雅降级** — socket 不可达时显示 `no choir`，服务端 schema 更新时显示 `schema ahead`
+- **点击聚焦窗格** — 点击任意合成的 choir 叶子入口即可聚焦对应的 Zellij pane
+- **优雅降级** — 保持原生 tab 导航可用，显示紧凑的 choir 源错误，并对不支持的 schema fail closed
 
 ## 安装
 
@@ -31,7 +31,7 @@
 ```kdl
 layout {
     default_tab_template {
-        pane size=2 borderless=true {
+        pane size=1 borderless=true {
             plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
                 choir_socket ".choir/server.sock"
             }
@@ -76,9 +76,11 @@ zjbar 每秒轮询一次 choir Unix domain socket，并发送换行分帧的 JSO
 {"jsonrpc":"2.0","id":"zjbar-status-bar-state","method":"tools/call","params":{"name":"status_bar_state","arguments":{}}}
 ```
 
-响应 payload 必须匹配 [protocol/status_bar_state.json](protocol/status_bar_state.json)。渲染器只消费这个类型化快照；它不会检查进程名，也不会从 Claude/Codex/OpenCode/Gemini hook 事件中推断状态。
+响应 payload 必须匹配 [protocol/status_bar_state.json](protocol/status_bar_state.json)。渲染器只消费这个类型化快照，并使用 Zellij pane manifest 获取 tab/pane 标题；它不会检查进程名，也不会从 Claude/Codex/OpenCode/Gemini hook 事件中推断状态。
 
-在 choir 暴露 `status_bar_state` 之前，或 `.choir/server.sock` 不可达时，zjbar 会渲染紧凑的 `no choir` 指示器。如果服务端返回的 `schema_version` 大于客户端支持版本，zjbar 会渲染 `schema ahead vN`，并拒绝渲染任何 pane 字段。
+Choir 生命周期状态会折叠进主导航行。真实 Zellij tab 保留原生 tab 编号和点击行为；非顶层 choir pane 会追加为可聚焦入口，并优先使用 Zellij 暴露的 pane 标题。如果多个 choir 代理解析到同一个 Zellij pane，zjbar 会为该 pane 选择优先级最高或最新的状态，而不是渲染重复的 `agent-*` 入口。
+
+在 choir 暴露 `status_bar_state` 之前，或 `.choir/server.sock` 不可达时，zjbar 会保持原生 tab 行可用，并渲染紧凑的 `no choir` 指示器，不渲染推断的 pane 字段。如果服务端返回的 `schema_version` 大于客户端支持版本，zjbar 会渲染 `schema ahead vN`，并拒绝渲染任何 pane 字段。
 
 旧 hook 脚本仍保留在仓库中，方便上游兼容维护；但这个 fork 的状态渲染由 choir 状态驱动。
 
@@ -112,7 +114,7 @@ Choir lifecycle 值渲染为：
 | ⊖    | `exitable`             |
 | 🔴   | `waiting_for_red_gate` |
 
-Pane 标签还会在字段存在时显示 PR 编号、未解决 review thread 数量和 CI 汇总。当 `attention_needed` 为 true 时，对应 pane 标签会使用配置的 flash 颜色脉冲约两秒。
+合成的 choir 叶子入口还会在字段存在时显示 PR 编号、未解决 review thread 数量和 CI 汇总。当 `attention_needed` 为 true 时，对应导航入口会使用配置的 flash 颜色脉冲约两秒。
 
 ## 配置
 
@@ -157,9 +159,9 @@ plugin location="zjbar.wasm" {
 
 ## 工作原理
 
-1. **WASM 插件** — 作为顶部 chrome 在 Zellij 内运行，渲染标签行和 choir 状态行，管理点击区域和 flash timing。
+1. **WASM 插件** — 作为顶部 chrome 在 Zellij 内运行，渲染统一的 tab/choir 导航行，管理点击区域和 flash timing。
 2. **宿主侧 UDS 桥接** — Zellij `run_command` 调用 Python 3 连接 `.choir/server.sock`，发送 `status_bar_state` JSON-RPC 请求，并返回一条换行分帧响应。
-3. **类型化快照渲染器** — Rust 按 v1 schema 解析响应，只渲染已识别字段。默认布局把 zjbar 放在顶部，恢复 Zellij 原生快捷键/状态栏到底部，并把 choir 状态折叠到 zjbar 的第 2 行；更高的 zjbar pane 可使用额外行展示层级。所有失败都会 fail closed。
+3. **类型化快照渲染器** — Rust 按 v1 schema 解析响应，只渲染已识别字段。默认布局把 zjbar 放在顶部，恢复 Zellij 原生快捷键/状态栏到底部，并把 choir 状态折叠到与 Zellij tab 相同的可选中行中。所有失败都会 fail closed。
 
 ## 卸载
 

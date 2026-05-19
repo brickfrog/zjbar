@@ -66,6 +66,16 @@ fn lifecycle_color(cfg: &crate::config::BarConfig, lifecycle: Lifecycle) -> Colo
     }
 }
 
+fn lifecycle_priority(lifecycle: Lifecycle) -> u8 {
+    match lifecycle {
+        Lifecycle::Failed | Lifecycle::WaitingForRedGate => 8,
+        Lifecycle::ChangesRequested => 7,
+        Lifecycle::ReviewOwned => 6,
+        Lifecycle::Working => 5,
+        Lifecycle::Done | Lifecycle::Exitable => 2,
+    }
+}
+
 macro_rules! write_fg {
     ($buf:expr, $r:expr, $g:expr, $b:expr) => {
         let _ = write!($buf, "\x1b[38;2;{};{};{}m", $r, $g, $b);
@@ -170,9 +180,66 @@ fn format_elapsed(secs: u64) -> String {
 
 struct TabRenderInfo {
     best_activity: Option<Activity>,
+    choir_lifecycle: Option<Lifecycle>,
     is_flash_bright: bool,
     waiting_pane_id: Option<u32>,
     elapsed_str: Option<String>,
+}
+
+impl TabRenderInfo {
+    fn status_indicator_width(&self) -> usize {
+        if self
+            .best_activity
+            .as_ref()
+            .map(|activity| !matches!(activity, Activity::Idle))
+            .unwrap_or(false)
+        {
+            return 1 + self
+                .best_activity
+                .as_ref()
+                .map(|activity| display_width(activity_symbol(activity)))
+                .unwrap_or(0);
+        }
+
+        self.choir_lifecycle
+            .map(|lifecycle| 1 + display_width(lifecycle_symbol(lifecycle)))
+            .unwrap_or(0)
+    }
+}
+
+fn status_pane_priority(pane: &StatusBarPane) -> (u8, u8, u64) {
+    (
+        u8::from(pane.attention_needed),
+        lifecycle_priority(pane.lifecycle),
+        pane.last_activity_unix,
+    )
+}
+
+fn best_status_pane<'a, I>(panes: I) -> Option<&'a StatusBarPane>
+where
+    I: Iterator<Item = &'a StatusBarPane>,
+{
+    panes.max_by(|a, b| {
+        status_pane_priority(a)
+            .cmp(&status_pane_priority(b))
+            .then_with(|| b.role.rank().cmp(&a.role.rank()))
+            .then_with(|| a.agent_id.cmp(&b.agent_id))
+    })
+}
+
+fn tab_choir_lifecycle(state: &State, tab_position: usize) -> Option<Lifecycle> {
+    let ChoirStatus::Ready(snapshot) = &state.choir_status else {
+        return None;
+    };
+
+    best_status_pane(snapshot.panes.iter().filter(|pane| {
+        state
+            .pane_to_tab
+            .get(&pane.zellij_pane_id)
+            .map(|(idx, _)| *idx == tab_position)
+            .unwrap_or(false)
+    }))
+    .map(|pane| pane.lifecycle)
 }
 
 fn compute_tab_info(
@@ -222,6 +289,7 @@ fn compute_tab_info(
 
             TabRenderInfo {
                 best_activity: best_session.map(|s| s.activity.clone()),
+                choir_lifecycle: tab_choir_lifecycle(state, tab.position),
                 is_flash_bright,
                 waiting_pane_id,
                 elapsed_str,
@@ -783,16 +851,7 @@ pub fn render_status_bar(state: &mut State, rows: usize, cols: usize) {
                 fill_remaining(&mut buf, col, cols, state.config.bar_bg);
                 rendered_all_rows = true;
                 if rows >= 2 {
-                    let _ = write!(buf, "\x1b[2;1H");
-                    let mut choir_col = 0usize;
-                    render_choir_status(
-                        state,
-                        &mut buf,
-                        &mut choir_col,
-                        cols,
-                        rows - 1,
-                        1,
-                    );
+                    fill_blank_rows(&mut buf, 1, rows, cols, state.config.bar_bg);
                 }
             }
             ViewMode::Settings => render_settings_menu(state, &mut buf, &mut col, cols),
@@ -1062,7 +1121,8 @@ fn render_single_tab(
         *col += display_width(ind);
     }
 
-    // Activity indicator
+    // Activity/status indicator
+    let mut rendered_status_indicator = false;
     if let Some(ref activity) = info.best_activity {
         if !matches!(activity, Activity::Idle) {
             let symbol = activity_symbol(activity);
@@ -1076,16 +1136,33 @@ fn render_single_tab(
             write_fg!(buf, icon_color);
             let _ = write!(buf, "{symbol}");
             *col += 1 + display_width(symbol);
+            rendered_status_indicator = true;
         }
+    }
 
-        if let Some(ref es) = info.elapsed_str {
-            if *col + 1 + es.len() + 1 < cols {
-                let _ = write!(buf, " {RESET}");
-                write_bg!(buf, tab_bg);
-                write_fg!(buf, cfg.elapsed_fg);
-                let _ = write!(buf, "{es}");
-                *col += 1 + es.len();
-            }
+    if !rendered_status_indicator {
+        if let Some(lifecycle) = info.choir_lifecycle {
+            let symbol = lifecycle_symbol(lifecycle);
+            let icon_color = if is_flash_bright {
+                cfg.flash_fg
+            } else {
+                lifecycle_color(cfg, lifecycle)
+            };
+            let _ = write!(buf, " {RESET}");
+            write_bg!(buf, tab_bg);
+            write_fg!(buf, icon_color);
+            let _ = write!(buf, "{symbol}");
+            *col += 1 + display_width(symbol);
+        }
+    }
+
+    if let Some(ref es) = info.elapsed_str {
+        if *col + 1 + es.len() + 1 < cols {
+            let _ = write!(buf, " {RESET}");
+            write_bg!(buf, tab_bg);
+            write_fg!(buf, cfg.elapsed_fg);
+            let _ = write!(buf, "{es}");
+            *col += 1 + es.len();
         }
     }
 
@@ -1135,9 +1212,9 @@ fn compute_tab_widths(
             sep_left_width + 1 + idx_digits + 1 + mid_sep + 1 + sep_left_width
         })
         .sum();
-    let claude_overhead: usize = tab_infos
+    let status_overhead: usize = tab_infos
         .iter()
-        .map(|info| if info.best_activity.is_some() { 2 } else { 0 })
+        .map(TabRenderInfo::status_indicator_width)
         .sum();
     let elapsed_overhead: usize = tab_infos
         .iter()
@@ -1160,7 +1237,7 @@ fn compute_tab_widths(
 
     let overhead = prefix_cols
         + fixed_per_tab
-        + claude_overhead
+        + status_overhead
         + elapsed_overhead
         + indicator_overhead
         + count;
@@ -1171,6 +1248,267 @@ fn compute_tab_widths(
     };
 
     TabWidthBudget { max_name_len }
+}
+
+fn short_agent_label(agent_id: &str) -> String {
+    agent_id
+        .rsplit('.')
+        .next()
+        .filter(|id| !id.is_empty())
+        .unwrap_or(agent_id)
+        .to_string()
+}
+
+fn pane_display_label(state: &State, pane: &StatusBarPane) -> String {
+    let mut label = state
+        .pane_titles
+        .get(&pane.zellij_pane_id)
+        .map(|title| title.trim())
+        .filter(|title| !title.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| short_agent_label(&pane.agent_id));
+    if let Some(pr) = pane.pr_number {
+        let _ = write!(label, " #{pr}");
+    }
+    if pane.unresolved_threads > 0 {
+        let _ = write!(label, " !{}", pane.unresolved_threads);
+    }
+    if let Some(ci) = pane.ci_rollup.symbol() {
+        let _ = write!(label, " {ci}");
+    }
+    label
+}
+
+fn inline_choir_entries(state: &State) -> Vec<StatusBarPane> {
+    let ChoirStatus::Ready(snapshot) = &state.choir_status else {
+        return Vec::new();
+    };
+
+    let mut entries: Vec<StatusBarPane> = Vec::new();
+    for pane in snapshot.panes.iter().filter(|pane| {
+        !pane.role.is_top_level() && state.pane_to_tab.contains_key(&pane.zellij_pane_id)
+    }) {
+        match entries
+            .iter()
+            .position(|entry| entry.zellij_pane_id == pane.zellij_pane_id)
+        {
+            Some(index) => {
+                if status_pane_priority(pane) > status_pane_priority(&entries[index]) {
+                    entries[index] = pane.clone();
+                }
+            }
+            None => entries.push(pane.clone()),
+        }
+    }
+
+    entries.sort_by(|a, b| {
+        let a_tab = state
+            .pane_to_tab
+            .get(&a.zellij_pane_id)
+            .map(|(idx, _)| *idx)
+            .unwrap_or(usize::MAX);
+        let b_tab = state
+            .pane_to_tab
+            .get(&b.zellij_pane_id)
+            .map(|(idx, _)| *idx)
+            .unwrap_or(usize::MAX);
+        a_tab
+            .cmp(&b_tab)
+            .then_with(|| a.parent_agent_id.cmp(&b.parent_agent_id))
+            .then_with(|| a.role.rank().cmp(&b.role.rank()))
+            .then_with(|| a.agent_id.cmp(&b.agent_id))
+    });
+
+    entries
+}
+
+fn render_inline_choir_entry(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    display_index: usize,
+    pane: &StatusBarPane,
+    label: &str,
+    now_ms: u64,
+) -> bool {
+    let cfg = &state.config;
+    if *col + MIN_TAB_COLS > cols {
+        return false;
+    }
+
+    let sep_left_width = display_width(&cfg.separator_left);
+    let sep_tab_width = display_width(&cfg.separator_tab);
+    let idx_digits = digit_count(display_index);
+    let symbol = lifecycle_symbol(pane.lifecycle);
+    let symbol_width = display_width(symbol);
+    let fixed_width = sep_left_width
+        + 1
+        + idx_digits
+        + 1
+        + sep_tab_width
+        + 1
+        + 1
+        + symbol_width
+        + 1
+        + sep_left_width;
+    let remaining = cols.saturating_sub(*col);
+    if remaining <= fixed_width {
+        return false;
+    }
+    let max_label_width = remaining
+        .saturating_sub(fixed_width)
+        .min(MAX_TAB_NAME_WIDTH);
+    if max_label_width == 0 {
+        return false;
+    }
+
+    let flash_bright = is_flash_bright(state, pane.zellij_pane_id, now_ms);
+    let is_active = state
+        .pane_to_tab
+        .get(&pane.zellij_pane_id)
+        .map(|(idx, _)| Some(*idx) == state.active_tab_index)
+        .unwrap_or(false);
+    let tab_bg = if flash_bright {
+        cfg.flash_bg
+    } else if is_active {
+        cfg.tab_active_bg
+    } else {
+        cfg.tab_inactive_bg
+    };
+    let tab_fg = if flash_bright {
+        cfg.flash_fg
+    } else if is_active {
+        cfg.tab_active_fg
+    } else {
+        cfg.tab_inactive_fg
+    };
+    let idx_bg = if flash_bright {
+        cfg.flash_bg
+    } else if is_active {
+        cfg.tab_active_index_bg
+    } else {
+        tab_bg
+    };
+    let idx_fg = if flash_bright {
+        cfg.flash_fg
+    } else if is_active {
+        cfg.tab_active_index_fg
+    } else {
+        tab_fg
+    };
+    let icon_color = if flash_bright {
+        cfg.flash_fg
+    } else {
+        lifecycle_color(cfg, pane.lifecycle)
+    };
+
+    let region_start = *col;
+    write_fg!(buf, cfg.bar_bg);
+    write_bg!(buf, idx_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    write_bg!(buf, idx_bg);
+    write_fg!(buf, idx_fg);
+    let _ = write!(buf, "{BOLD} {display_index} {RESET}");
+    *col += 1 + idx_digits + 1;
+
+    write_bg!(buf, tab_bg);
+    write_fg!(buf, cfg.tab_separator_fg);
+    let _ = write!(buf, "{}", cfg.separator_tab);
+    *col += sep_tab_width;
+
+    write_bg!(buf, tab_bg);
+    write_fg!(buf, tab_fg);
+    let _ = write!(buf, "{BOLD} ");
+    *col += 1;
+    *col += write_truncated(buf, label, max_label_width);
+
+    let _ = write!(buf, " {RESET}");
+    write_bg!(buf, tab_bg);
+    write_fg!(buf, icon_color);
+    let _ = write!(buf, "{symbol}");
+    *col += 1 + symbol_width;
+
+    let _ = write!(buf, "{RESET}");
+    write_bg!(buf, tab_bg);
+    let _ = write!(buf, " ");
+    *col += 1;
+    write_fg!(buf, tab_bg);
+    write_bg!(buf, cfg.bar_bg);
+    let _ = write!(buf, "{}", cfg.separator_left);
+    *col += sep_left_width;
+
+    state.click_regions.push(ClickRegion {
+        row: 0,
+        start_col: region_start,
+        end_col: *col,
+        tab_index: 0,
+        pane_id: pane.zellij_pane_id,
+        is_waiting: true,
+    });
+
+    true
+}
+
+fn render_inline_choir_entries(
+    state: &mut State,
+    buf: &mut String,
+    col: &mut usize,
+    cols: usize,
+    first_display_index: usize,
+    now_ms: u64,
+) {
+    let entries = inline_choir_entries(state);
+    for (offset, pane) in entries.iter().enumerate() {
+        let label = pane_display_label(state, pane);
+        if !render_inline_choir_entry(
+            state,
+            buf,
+            col,
+            cols,
+            first_display_index + offset,
+            pane,
+            &label,
+            now_ms,
+        ) {
+            break;
+        }
+    }
+}
+
+fn render_inline_choir_problem(state: &State, buf: &mut String, col: &mut usize, cols: usize) {
+    match state.choir_status {
+        ChoirStatus::Ready(_) => {}
+        ChoirStatus::SchemaAhead(version) => render_status_indicator(
+            buf,
+            col,
+            cols,
+            &state.config,
+            &format!("schema ahead v{version}"),
+            state.config.activity_waiting_color,
+            state.config.session_fg,
+        ),
+        ChoirStatus::Invalid(_) => render_status_indicator(
+            buf,
+            col,
+            cols,
+            &state.config,
+            "choir invalid",
+            state.config.activity_waiting_color,
+            state.config.session_fg,
+        ),
+        ChoirStatus::NoChoir => render_status_indicator(
+            buf,
+            col,
+            cols,
+            &state.config,
+            "no choir",
+            state.config.tab_inactive_bg,
+            state.config.tab_inactive_fg,
+        ),
+    }
 }
 
 fn render_tabs(state: &mut State, buf: &mut String, col: &mut usize, cols: usize) {
@@ -1221,11 +1559,37 @@ fn render_tabs(state: &mut State, buf: &mut String, col: &mut usize, cols: usize
             is_waiting: info.waiting_pane_id.is_some(),
         });
     }
+
+    render_inline_choir_entries(state, buf, col, cols, count + 1, now_ms);
+    render_inline_choir_problem(state, buf, col, cols);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_status_pane(
+        zellij_pane_id: u32,
+        agent_id: &str,
+        role: crate::choir_status::ChoirRole,
+        lifecycle: Lifecycle,
+        parent_agent_id: Option<&str>,
+        last_activity_unix: u64,
+    ) -> StatusBarPane {
+        StatusBarPane {
+            zellij_pane_id,
+            agent_id: agent_id.to_string(),
+            role,
+            agent_type: crate::choir_status::AgentType::Codex,
+            lifecycle,
+            pr_number: None,
+            unresolved_threads: 0,
+            ci_rollup: crate::choir_status::CiRollup::Unknown,
+            attention_needed: false,
+            parent_agent_id: parent_agent_id.map(str::to_string),
+            last_activity_unix,
+        }
+    }
 
     // -- char_width --
 
@@ -1350,6 +1714,7 @@ mod tests {
         let tabs: Vec<&TabInfo> = vec![&tab1];
         let infos = vec![TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1371,6 +1736,7 @@ mod tests {
         let tabs: Vec<&TabInfo> = vec![&tab1];
         let infos = vec![TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1715,6 +2081,7 @@ mod tests {
         let tabs: Vec<&TabInfo> = vec![&tab];
         let infos = vec![TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1730,6 +2097,7 @@ mod tests {
         let cfg = crate::config::BarConfig::default();
         let make_info = || TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1778,6 +2146,7 @@ mod tests {
         };
         let info = TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1812,6 +2181,7 @@ mod tests {
         };
         let info = TabRenderInfo {
             best_activity: Some(Activity::Tool("Bash".into())),
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1845,6 +2215,7 @@ mod tests {
         };
         let info = TabRenderInfo {
             best_activity: Some(Activity::Thinking),
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: Some("45s".into()),
@@ -1878,6 +2249,7 @@ mod tests {
         };
         let info = TabRenderInfo {
             best_activity: None,
+            choir_lifecycle: None,
             is_flash_bright: false,
             waiting_pane_id: None,
             elapsed_str: None,
@@ -1976,6 +2348,114 @@ mod tests {
     }
 
     #[test]
+    fn test_render_tabs_folds_choir_lifecycle_into_matching_tab() {
+        let mut state = State::default();
+        state.tabs = vec![
+            TabInfo {
+                position: 0,
+                name: "Server".to_string(),
+                active: false,
+                ..Default::default()
+            },
+            TabInfo {
+                position: 1,
+                name: "TL".to_string(),
+                active: true,
+                ..Default::default()
+            },
+        ];
+        state.active_tab_index = Some(1);
+        state.pane_to_tab.insert(2, (1, "TL".to_string()));
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![
+                test_status_pane(
+                    2,
+                    "root",
+                    crate::choir_status::ChoirRole::Tl,
+                    Lifecycle::Working,
+                    None,
+                    200,
+                ),
+                test_status_pane(
+                    2,
+                    "agent-tl-1814786",
+                    crate::choir_status::ChoirRole::Tl,
+                    Lifecycle::Working,
+                    None,
+                    0,
+                ),
+            ],
+        });
+
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_tabs(&mut state, &mut buf, &mut col, 160);
+
+        assert!(buf.contains("TL"));
+        assert!(buf.contains("⏳"));
+        assert!(!buf.contains("agent-tl-1814786"));
+        assert_eq!(state.click_regions.len(), 2);
+    }
+
+    #[test]
+    fn test_render_tabs_adds_distinct_choir_leaf_as_focusable_entry() {
+        let mut state = State::default();
+        state.tabs = vec![
+            TabInfo {
+                position: 0,
+                name: "Server".to_string(),
+                active: false,
+                ..Default::default()
+            },
+            TabInfo {
+                position: 1,
+                name: "TL".to_string(),
+                active: true,
+                ..Default::default()
+            },
+        ];
+        state.active_tab_index = Some(1);
+        state.pane_to_tab.insert(2, (1, "TL".to_string()));
+        state.pane_to_tab.insert(7, (1, "TL".to_string()));
+        state.pane_titles.insert(7, "Third Leaf Here".to_string());
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![
+                test_status_pane(
+                    2,
+                    "root",
+                    crate::choir_status::ChoirRole::Tl,
+                    Lifecycle::Working,
+                    None,
+                    200,
+                ),
+                test_status_pane(
+                    7,
+                    "root.third-leaf",
+                    crate::choir_status::ChoirRole::Dev,
+                    Lifecycle::ChangesRequested,
+                    Some("root"),
+                    210,
+                ),
+            ],
+        });
+
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_tabs(&mut state, &mut buf, &mut col, 200);
+
+        assert!(buf.contains("Third Leaf Here"));
+        assert!(buf.contains("✎"));
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 0 && region.pane_id == 7 && region.is_waiting));
+    }
+
+    #[test]
     fn test_render_tabs_narrow_terminal_stops_early() {
         let mut state = State::default();
         state.tabs = (0..5)
@@ -2006,31 +2486,34 @@ mod tests {
     #[test]
     fn test_render_status_bar_with_choir_snapshot_populates_click_regions() {
         let mut state = State::default();
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "TL".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        state.active_tab_index = Some(0);
+        state.pane_to_tab.insert(1, (0, "TL".to_string()));
         state.choir_status = ChoirStatus::Ready(StatusBarState {
             schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
             taken_at_ms: 1000,
-            panes: vec![StatusBarPane {
-                zellij_pane_id: 1,
-                agent_id: "root".into(),
-                role: crate::choir_status::ChoirRole::Root,
-                agent_type: crate::choir_status::AgentType::Codex,
-                lifecycle: Lifecycle::Working,
-                pr_number: None,
-                unresolved_threads: 0,
-                ci_rollup: crate::choir_status::CiRollup::Unknown,
-                attention_needed: false,
-                parent_agent_id: None,
-                last_activity_unix: 100,
-            }],
+            panes: vec![test_status_pane(
+                1,
+                "root",
+                crate::choir_status::ChoirRole::Root,
+                Lifecycle::Working,
+                None,
+                100,
+            )],
         });
-        render_status_bar(&mut state, 2, 120);
+        render_status_bar(&mut state, 1, 120);
         assert!(state.click_regions.len() > 0);
-        assert_eq!(state.click_regions[0].row, 1);
-        assert_eq!(state.click_regions[0].pane_id, 1);
+        assert_eq!(state.click_regions[0].row, 0);
+        assert_eq!(state.click_regions[0].tab_index, 0);
     }
 
     #[test]
-    fn test_render_status_bar_keeps_tabs_on_first_row_and_choir_on_second() {
+    fn test_render_status_bar_folds_choir_status_into_tab_row() {
         let mut state = State::default();
         state.tabs = vec![TabInfo {
             position: 0,
@@ -2038,24 +2521,64 @@ mod tests {
             active: true,
             ..Default::default()
         }];
+        state.active_tab_index = Some(0);
+        state.pane_to_tab.insert(1, (0, "Server".to_string()));
         state.choir_status = ChoirStatus::Ready(StatusBarState {
             schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
             taken_at_ms: 1000,
-            panes: vec![StatusBarPane {
-                zellij_pane_id: 1,
-                agent_id: "root".into(),
-                role: crate::choir_status::ChoirRole::Root,
-                agent_type: crate::choir_status::AgentType::Codex,
-                lifecycle: Lifecycle::Working,
-                pr_number: None,
-                unresolved_threads: 0,
-                ci_rollup: crate::choir_status::CiRollup::Unknown,
-                attention_needed: false,
-                parent_agent_id: None,
-                last_activity_unix: 100,
-            }],
+            panes: vec![test_status_pane(
+                1,
+                "root",
+                crate::choir_status::ChoirRole::Root,
+                Lifecycle::Working,
+                None,
+                100,
+            )],
         });
-        render_status_bar(&mut state, 2, 120);
+        render_status_bar(&mut state, 1, 120);
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.row == 0 && region.tab_index == 0 && !region.is_waiting));
+        assert!(!state.click_regions.iter().any(|region| region.row == 1));
+    }
+
+    #[test]
+    fn test_render_status_bar_adds_distinct_leaf_to_tab_row() {
+        let mut state = State::default();
+        state.tabs = vec![TabInfo {
+            position: 0,
+            name: "TL".to_string(),
+            active: true,
+            ..Default::default()
+        }];
+        state.active_tab_index = Some(0);
+        state.pane_to_tab.insert(1, (0, "TL".to_string()));
+        state.pane_to_tab.insert(2, (0, "TL".to_string()));
+        state.pane_titles.insert(2, "leaf-a".to_string());
+        state.choir_status = ChoirStatus::Ready(StatusBarState {
+            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
+            taken_at_ms: 1000,
+            panes: vec![
+                test_status_pane(
+                    1,
+                    "root",
+                    crate::choir_status::ChoirRole::Root,
+                    Lifecycle::Working,
+                    None,
+                    100,
+                ),
+                test_status_pane(
+                    2,
+                    "root.leaf-a",
+                    crate::choir_status::ChoirRole::Dev,
+                    Lifecycle::ChangesRequested,
+                    Some("root"),
+                    101,
+                ),
+            ],
+        });
+        render_status_bar(&mut state, 1, 140);
         assert!(state
             .click_regions
             .iter()
@@ -2063,53 +2586,7 @@ mod tests {
         assert!(state
             .click_regions
             .iter()
-            .any(|region| region.row == 1 && region.pane_id == 1 && region.is_waiting));
-    }
-
-    #[test]
-    fn test_render_status_bar_collapses_choir_hierarchy_on_second_row() {
-        let mut state = State::default();
-        state.choir_status = ChoirStatus::Ready(StatusBarState {
-            schema_version: crate::choir_status::STATUS_BAR_SCHEMA_VERSION,
-            taken_at_ms: 1000,
-            panes: vec![
-                StatusBarPane {
-                    zellij_pane_id: 1,
-                    agent_id: "root".into(),
-                    role: crate::choir_status::ChoirRole::Root,
-                    agent_type: crate::choir_status::AgentType::Codex,
-                    lifecycle: Lifecycle::Working,
-                    pr_number: None,
-                    unresolved_threads: 0,
-                    ci_rollup: crate::choir_status::CiRollup::Unknown,
-                    attention_needed: false,
-                    parent_agent_id: None,
-                    last_activity_unix: 100,
-                },
-                StatusBarPane {
-                    zellij_pane_id: 2,
-                    agent_id: "root.leaf-a".into(),
-                    role: crate::choir_status::ChoirRole::Dev,
-                    agent_type: crate::choir_status::AgentType::Codex,
-                    lifecycle: Lifecycle::ChangesRequested,
-                    pr_number: Some(42),
-                    unresolved_threads: 3,
-                    ci_rollup: crate::choir_status::CiRollup::Failure,
-                    attention_needed: true,
-                    parent_agent_id: Some("root".into()),
-                    last_activity_unix: 101,
-                },
-            ],
-        });
-        render_status_bar(&mut state, 2, 140);
-        assert!(state
-            .click_regions
-            .iter()
-            .any(|region| region.row == 1 && region.pane_id == 1));
-        assert!(state
-            .click_regions
-            .iter()
-            .any(|region| region.row == 1 && region.pane_id == 2));
+            .any(|region| region.row == 0 && region.pane_id == 2 && region.is_waiting));
     }
 
     #[test]

@@ -8,13 +8,13 @@ This is an owned fork of [imroc/zjbar](https://github.com/imroc/zjbar) for choir
 
 ## Features
 
-- **Powerline tab bar** — Tokyo Night themed, clickable tab row with sharp powerline arrows between segments
+- **Unified powerline navigation** — Tokyo Night themed, clickable row with native Zellij tabs first and choir leaf entries after them
 - **Session & mode display** — shows session name and input mode (NORMAL, LOCKED, PANE, etc.) with color-coded pills
 - **Choir status source** — polls `.choir/server.sock` for the typed `status_bar_state` snapshot; no process-name inference is used
-- **Choir status row** — renders root/TL and grouped leaf agents below the tab row, preserving native tab navigation
+- **Choir status folding** — renders lifecycle symbols beside the matching tab or leaf pane and collapses duplicate agents that resolve to the same Zellij pane
 - **Native shortcut strip** — keeps Zellij's original bottom status-bar plugin for keybinding hints
-- **Click-to-focus panes** — click any choir agent pill to focus its Zellij pane
-- **Graceful degradation** — shows `no choir` when the socket is unreachable and `schema ahead` when the server uses a newer schema
+- **Click-to-focus panes** — click any synthetic choir leaf entry to focus its Zellij pane
+- **Graceful degradation** — keeps native tab navigation usable, shows compact choir source errors, and refuses unsupported schema versions fail-closed
 
 ## Install
 
@@ -31,7 +31,7 @@ Add the zjbar plugin to your Zellij layout file (e.g. `~/.config/zellij/layouts/
 ```kdl
 layout {
     default_tab_template {
-        pane size=2 borderless=true {
+        pane size=1 borderless=true {
             plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
                 choir_socket ".choir/server.sock"
             }
@@ -76,9 +76,11 @@ zjbar polls the choir Unix domain socket once per second and sends a newline-fra
 {"jsonrpc":"2.0","id":"zjbar-status-bar-state","method":"tools/call","params":{"name":"status_bar_state","arguments":{}}}
 ```
 
-The response payload must match [protocol/status_bar_state.json](protocol/status_bar_state.json). The renderer consumes only this typed snapshot; it does not inspect process names and does not infer state from Claude/Codex/OpenCode/Gemini hook events.
+The response payload must match [protocol/status_bar_state.json](protocol/status_bar_state.json). The renderer consumes only this typed snapshot plus Zellij's pane manifest for tab/pane titles; it does not inspect process names and does not infer state from Claude/Codex/OpenCode/Gemini hook events.
 
-Until choir exposes `status_bar_state`, or whenever `.choir/server.sock` is unreachable, zjbar renders a compact `no choir` indicator. If the server returns a snapshot with `schema_version` greater than the client-supported version, zjbar renders `schema ahead vN` and refuses to render per-pane fields.
+Choir lifecycle state is folded into the main navigation row. Real Zellij tabs keep their native tab numbers and click behavior, while non-top-level choir panes are appended as focusable entries using the pane title from Zellij when available. If multiple choir agents resolve to the same Zellij pane, zjbar chooses the highest-priority/current status for that pane instead of rendering duplicate `agent-*` entries.
+
+Until choir exposes `status_bar_state`, or whenever `.choir/server.sock` is unreachable, zjbar keeps the native tab row usable and renders a compact `no choir` indicator without rendering inferred per-pane fields. If the server returns a snapshot with `schema_version` greater than the client-supported version, zjbar renders `schema ahead vN` and refuses to render per-pane fields.
 
 The old hook scripts are still present in the repository for upstream compatibility work, but this fork's status rendering is driven by choir state.
 
@@ -112,7 +114,7 @@ Choir lifecycle values render as:
 | ⊖      | `exitable`             |
 | 🔴     | `waiting_for_red_gate` |
 
-Pane pills also show PR number, unresolved thread count, and CI rollup when those fields are present. When `attention_needed` is true, the pane pill pulses with the configured flash colors for about two seconds.
+Synthetic choir leaf entries also show PR number, unresolved thread count, and CI rollup when those fields are present. When `attention_needed` is true, the matching navigation entry pulses with the configured flash colors for about two seconds.
 
 ## Configuration
 
@@ -157,9 +159,9 @@ See [layout.kdl](layout.kdl) for the full list of available options with default
 
 ## How It Works
 
-1. **WASM plugin** — runs inside Zellij as the top chrome, renders the tab row plus the choir status row, manages click regions and flash timing.
+1. **WASM plugin** — runs inside Zellij as the top chrome, renders the unified tab/choir navigation row, manages click regions and flash timing.
 2. **Host-side UDS bridge** — Zellij `run_command` invokes Python 3 to connect to `.choir/server.sock`, send the `status_bar_state` JSON-RPC request, and return one newline-framed response.
-3. **Typed snapshot renderer** — Rust parses the response against the v1 schema and renders only recognized fields. The default layout keeps zjbar at the top, restores Zellij's native shortcut/status strip at the bottom, and collapses choir state onto zjbar's second row; larger zjbar panes can use extra rows for hierarchy. All failures are fail-closed.
+3. **Typed snapshot renderer** — Rust parses the response against the v1 schema and renders only recognized fields. The default layout keeps zjbar at the top, restores Zellij's native shortcut/status strip at the bottom, and folds choir state into the same selectable row as the Zellij tabs. All failures are fail-closed.
 
 ## Uninstall
 

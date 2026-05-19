@@ -7,10 +7,8 @@ pub fn build_pane_to_tab_map(
     tabs: &[TabInfo],
     manifest: &PaneManifest,
 ) -> HashMap<u32, (usize, String)> {
-    let tab_name_by_position: HashMap<usize, String> = tabs
-        .iter()
-        .map(|t| (t.position, t.name.clone()))
-        .collect();
+    let tab_name_by_position: HashMap<usize, String> =
+        tabs.iter().map(|t| (t.position, t.name.clone())).collect();
 
     let mut map = HashMap::new();
     for (&tab_index, panes) in &manifest.panes {
@@ -21,6 +19,18 @@ pub fn build_pane_to_tab_map(
         for pane in panes {
             if !pane.is_plugin {
                 map.insert(pane.id, (tab_index, tab_name.clone()));
+            }
+        }
+    }
+    map
+}
+
+pub fn build_pane_title_map(manifest: &PaneManifest) -> HashMap<u32, String> {
+    let mut map = HashMap::new();
+    for panes in manifest.panes.values() {
+        for pane in panes {
+            if !pane.is_plugin {
+                map.insert(pane.id, pane.title.clone());
             }
         }
     }
@@ -111,5 +121,30 @@ mod tests {
         let manifest = make_manifest(vec![(0, vec![make_pane(1, true), make_pane(2, true)])]);
         let map = build_pane_to_tab_map(&tabs, &manifest);
         assert!(map.is_empty());
+    }
+
+    #[test]
+    fn pane_title_map_excludes_plugin_panes() {
+        let manifest = make_manifest(vec![(
+            0,
+            vec![
+                PaneInfo {
+                    id: 1,
+                    title: "leaf work".to_string(),
+                    ..Default::default()
+                },
+                PaneInfo {
+                    id: 2,
+                    title: "zjbar".to_string(),
+                    is_plugin: true,
+                    ..Default::default()
+                },
+            ],
+        )]);
+
+        let map = build_pane_title_map(&manifest);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map[&1], "leaf work".to_string());
+        assert!(!map.contains_key(&2));
     }
 }

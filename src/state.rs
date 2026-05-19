@@ -237,6 +237,7 @@ pub struct State {
     pub config_loaded: bool,
     pub sessions: BTreeMap<u32, SessionInfo>,
     pub pane_to_tab: HashMap<u32, (usize, String)>,
+    pub pane_titles: HashMap<u32, String>,
     pub tabs: Vec<TabInfo>,
     pub pane_manifest: Option<PaneManifest>,
     pub active_tab_index: Option<usize>,

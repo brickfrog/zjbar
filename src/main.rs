@@ -325,6 +325,7 @@ impl State {
     fn rebuild_pane_map(&mut self) {
         if let Some(ref manifest) = self.pane_manifest {
             self.pane_to_tab = tab_pane_map::build_pane_to_tab_map(&self.tabs, manifest);
+            self.pane_titles = tab_pane_map::build_pane_title_map(manifest);
             self.refresh_session_tab_names();
             self.remove_dead_panes();
         }
