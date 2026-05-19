@@ -32,7 +32,7 @@ Add the zjbar plugin to your Zellij layout file (e.g. `~/.config/zellij/layouts/
 layout {
     default_tab_template {
         pane size=1 borderless=true {
-            plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.3.0/zjbar.wasm" {
+            plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
                 choir_socket ".choir/server.sock"
             }
         }
