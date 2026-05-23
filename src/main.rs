@@ -326,7 +326,7 @@ impl State {
         let next_attention: HashSet<u32> = snapshot
             .panes
             .iter()
-            .filter(|pane| pane.attention_needed)
+            .filter(|pane| pane.attention_needed.is_needed())
             .map(|pane| pane.zellij_pane_id)
             .collect();
 
@@ -569,9 +569,9 @@ mod tests {
                 agent_type: choir_status::AgentType::Codex,
                 lifecycle,
                 pr_number: None,
-                unresolved_threads: 0,
+                unresolved_threads: choir_status::UnresolvedThreads::Count(0),
                 ci_rollup: choir_status::CiRollup::Unknown,
-                attention_needed: false,
+                attention_needed: choir_status::PaneAttention::Clear,
                 parent_agent_id: None,
                 last_activity_unix: 1,
             }],

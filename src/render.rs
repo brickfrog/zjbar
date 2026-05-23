@@ -209,7 +209,7 @@ impl TabRenderInfo {
 
 fn status_pane_priority(pane: &StatusBarPane) -> (u8, u8, u64) {
     (
-        u8::from(pane.attention_needed),
+        u8::from(pane.attention_needed.is_needed()),
         lifecycle_priority(pane.lifecycle),
         pane.last_activity_unix,
     )
@@ -437,8 +437,8 @@ fn pane_label(pane: &StatusBarPane) -> String {
     if let Some(pr) = pane.pr_number {
         let _ = write!(label, " #{pr}");
     }
-    if pane.unresolved_threads > 0 {
-        let _ = write!(label, " !{}", pane.unresolved_threads);
+    if pane.unresolved_threads.count() > 0 {
+        let _ = write!(label, " !{}", pane.unresolved_threads.count());
     }
     if let Some(ci) = pane.ci_rollup.symbol() {
         let _ = write!(label, " {ci}");
@@ -1270,8 +1270,8 @@ fn pane_display_label(state: &State, pane: &StatusBarPane) -> String {
     if let Some(pr) = pane.pr_number {
         let _ = write!(label, " #{pr}");
     }
-    if pane.unresolved_threads > 0 {
-        let _ = write!(label, " !{}", pane.unresolved_threads);
+    if pane.unresolved_threads.count() > 0 {
+        let _ = write!(label, " !{}", pane.unresolved_threads.count());
     }
     if let Some(ci) = pane.ci_rollup.symbol() {
         let _ = write!(label, " {ci}");
@@ -1594,9 +1594,9 @@ mod tests {
             agent_type: crate::choir_status::AgentType::Codex,
             lifecycle,
             pr_number: None,
-            unresolved_threads: 0,
+            unresolved_threads: crate::choir_status::UnresolvedThreads::Count(0),
             ci_rollup: crate::choir_status::CiRollup::Unknown,
-            attention_needed: false,
+            attention_needed: crate::choir_status::PaneAttention::Clear,
             parent_agent_id: parent_agent_id.map(str::to_string),
             last_activity_unix,
         }

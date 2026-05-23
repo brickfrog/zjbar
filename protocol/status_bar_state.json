@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 1,
+      "const": 2,
       "description": "Wire schema version. Clients must refuse schema versions newer than they know."
     },
     "taken_at_ms": {
@@ -72,15 +72,18 @@
           "minimum": 1
         },
         "unresolved_threads": {
-          "type": "integer",
-          "minimum": 0
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "enum": ["none", "unknown"] }
+          ]
         },
         "ci_rollup": {
           "type": "string",
           "enum": ["success", "in_progress", "failure", "unknown", "no_checks"]
         },
         "attention_needed": {
-          "type": "boolean"
+          "type": "string",
+          "enum": ["clear", "needed", "unknown"]
         },
         "parent_agent_id": {
           "type": ["string", "null"],

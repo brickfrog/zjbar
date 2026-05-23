@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 
-pub const STATUS_BAR_SCHEMA_VERSION: u64 = 1;
+pub const STATUS_BAR_SCHEMA_VERSION: u64 = 2;
 pub const CHOIR_POLL_INTERVAL_MS: u64 = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +73,69 @@ impl CiRollup {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneAttention {
+    Clear,
+    Needed,
+    Unknown,
+}
+
+impl PaneAttention {
+    pub fn is_needed(self) -> bool {
+        matches!(self, Self::Needed)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnresolvedThreads {
+    Count(u32),
+    None,
+    Unknown,
+}
+
+impl UnresolvedThreads {
+    pub fn count(self) -> u32 {
+        match self {
+            Self::Count(n) => n,
+            Self::None | Self::Unknown => 0,
+        }
+    }
+}
+
+impl Serialize for UnresolvedThreads {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Count(n) => serializer.serialize_u32(*n),
+            Self::None => serializer.serialize_str("none"),
+            Self::Unknown => serializer.serialize_str("unknown"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UnresolvedThreads {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        match Value::deserialize(deserializer)? {
+            Value::Number(n) => n
+                .as_u64()
+                .and_then(|v| u32::try_from(v).ok())
+                .map(Self::Count)
+                .ok_or_else(|| Error::custom("unresolved_threads: expected non-negative u32")),
+            Value::String(s) => match s.as_str() {
+                "none" => Ok(Self::None),
+                "unknown" => Ok(Self::Unknown),
+                other => Err(Error::custom(format!(
+                    "unresolved_threads: expected count/none/unknown, got string {other:?}"
+                ))),
+            },
+            other => Err(Error::custom(format!(
+                "unresolved_threads: expected integer or string, got {other:?}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StatusBarPane {
@@ -82,9 +145,9 @@ pub struct StatusBarPane {
     pub agent_type: AgentType,
     pub lifecycle: Lifecycle,
     pub pr_number: Option<u32>,
-    pub unresolved_threads: u32,
+    pub unresolved_threads: UnresolvedThreads,
     pub ci_rollup: CiRollup,
-    pub attention_needed: bool,
+    pub attention_needed: PaneAttention,
     pub parent_agent_id: Option<String>,
     pub last_activity_unix: u64,
 }
@@ -331,7 +394,7 @@ mod tests {
 
     fn snapshot_json() -> String {
         serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "taken_at_ms": 1760000000123_u64,
             "panes": [{
                 "zellij_pane_id": 7,
@@ -342,7 +405,7 @@ mod tests {
                 "pr_number": 42,
                 "unresolved_threads": 2,
                 "ci_rollup": "in_progress",
-                "attention_needed": true,
+                "attention_needed": "needed",
                 "parent_agent_id": "root",
                 "last_activity_unix": 1760000000_u64
             }]
@@ -363,7 +426,7 @@ mod tests {
     #[test]
     fn parse_direct_snapshot() {
         let snapshot = parse_status_bar_state_response(&snapshot_json()).unwrap();
-        assert_eq!(snapshot.schema_version, 1);
+        assert_eq!(snapshot.schema_version, 2);
         assert_eq!(snapshot.panes[0].agent_id, "main.leaf-a");
         assert_eq!(snapshot.panes[0].lifecycle, Lifecycle::Working);
     }
@@ -406,27 +469,27 @@ mod tests {
         })
         .to_string();
         let snapshot = parse_status_bar_state_response(&response).unwrap();
-        assert_eq!(snapshot.panes[0].attention_needed, true);
+        assert_eq!(snapshot.panes[0].attention_needed, PaneAttention::Needed);
     }
 
     #[test]
     fn schema_ahead_is_explicit() {
         let response = serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "taken_at_ms": 1,
             "panes": []
         })
         .to_string();
         assert_eq!(
             parse_status_bar_state_response(&response),
-            Err(StatusBarError::SchemaAhead(2))
+            Err(StatusBarError::SchemaAhead(3))
         );
     }
 
     #[test]
     fn unknown_field_fails_closed() {
         let response = serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "taken_at_ms": 1,
             "panes": [],
             "extra": true
