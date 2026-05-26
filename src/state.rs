@@ -21,7 +21,7 @@ pub fn unix_now_ms() -> u64 {
 
 pub const FLASH_DURATION_MS: u64 = 2000;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Activity {
     Init,
     Thinking,
@@ -67,7 +67,7 @@ impl Activity {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub session_id: String,
     pub pane_id: u32,
@@ -103,7 +103,7 @@ impl HookPayload {
 
 // -- Flash mode --
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FlashMode {
     #[default]
@@ -132,7 +132,7 @@ impl FlashMode {
 
 // -- Notify mode --
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NotifyMode {
     #[default]
@@ -161,7 +161,7 @@ impl NotifyMode {
 
 // -- Persisted settings (stored in zjbar.json) --
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub flash: FlashMode,
@@ -227,10 +227,14 @@ pub struct ClickRegion {
 #[derive(Default)]
 pub struct State {
     pub config: BarConfig,
+    pub plugin_id: Option<u32>,
+    pub own_tab_index: Option<usize>,
     pub choir_status: ChoirStatus,
     pub choir_poll_inflight: bool,
     pub choir_last_poll_ms: u64,
+    pub choir_next_poll_ms: u64,
     pub choir_last_ready_ms: u64,
+    pub sync_requested: bool,
     pub settings: Settings,
     pub view_mode: ViewMode,
     pub menu_click_regions: Vec<MenuClickRegion>,

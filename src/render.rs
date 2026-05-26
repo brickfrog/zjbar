@@ -8,6 +8,7 @@ use crate::state::{
 };
 use std::fmt::Write;
 use std::io::Write as IoWrite;
+use unicode_width::UnicodeWidthChar;
 use zellij_tile::prelude::{InputMode, TabInfo};
 
 fn activity_priority(activity: &Activity) -> u8 {
@@ -92,23 +93,7 @@ macro_rules! write_bg {
 }
 
 fn char_width(c: char) -> usize {
-    let cp = c as u32;
-    if (0x1100..=0x115F).contains(&cp)    // Hangul Jamo
-        || (0x2E80..=0x9FFF).contains(&cp) // CJK Radicals..CJK Unified Ideographs
-        || (0xAC00..=0xD7AF).contains(&cp) // Hangul Syllables
-        || (0xF900..=0xFAFF).contains(&cp) // CJK Compatibility Ideographs
-        || (0xFE10..=0xFE19).contains(&cp) // Vertical Forms
-        || (0xFE30..=0xFE6F).contains(&cp) // CJK Compatibility Forms + Small Form Variants
-        || (0xFF01..=0xFF60).contains(&cp) // Fullwidth Forms
-        || (0xFFE0..=0xFFE6).contains(&cp) // Fullwidth Signs
-        || (0x20000..=0x2FA1F).contains(&cp) // CJK Ext B..Kangxi Supplement
-        || (0x30000..=0x323AF).contains(&cp)
-    // CJK Ext G..H
-    {
-        2
-    } else {
-        1
-    }
+    UnicodeWidthChar::width(c).unwrap_or(0)
 }
 
 fn display_width(s: &str) -> usize {
@@ -155,6 +140,7 @@ fn digit_count(n: usize) -> usize {
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
+const RENDER_START: &str = "\x1b[H";
 const ELAPSED_THRESHOLD: u64 = 30;
 
 /// Maximum display width for a tab name before truncation.
@@ -811,7 +797,7 @@ pub fn render_status_bar(state: &mut State, rows: usize, cols: usize) {
 
     let cfg = &state.config;
     let mut buf = String::with_capacity(cols * rows * 4);
-    buf.push_str("\x1b[H\x1b[?7l\x1b[?25l");
+    buf.push_str(RENDER_START);
 
     if cols < 50 {
         state.prefix_click_region = None;
@@ -907,7 +893,7 @@ fn render_menu_item(
     let _ = write!(buf, "{sym} ");
     write_fg!(buf, label_c);
     let _ = write!(buf, "{label}");
-    *col += 2 + label.len();
+    *col += display_width(sym) + 1 + display_width(label);
 
     regions.push(MenuClickRegion {
         start_col: start,
@@ -1043,16 +1029,6 @@ fn render_single_tab(
         cfg.tab_inactive_fg
     };
 
-    // Compute name truncation parameters (no allocation)
-    let char_count = tab.name.chars().count();
-    let (name_chars, needs_ellipsis) = if max_name_len == 0 {
-        (0, false)
-    } else if char_count > max_name_len {
-        (max_name_len.saturating_sub(1), true)
-    } else {
-        (char_count, false)
-    };
-
     let region_start = *col;
 
     // Determine index colors (active tabs get a highlighted index)
@@ -1098,16 +1074,7 @@ fn render_single_tab(
     let _ = write!(buf, "{BOLD} ");
     *col += 1;
 
-    if name_chars > 0 {
-        for c in tab.name.chars().take(name_chars) {
-            buf.push(c);
-            *col += char_width(c);
-        }
-        if needs_ellipsis {
-            buf.push('\u{2026}');
-            *col += 1;
-        }
-    }
+    *col += write_truncated(buf, &tab.name, max_name_len);
 
     // Fullscreen / floating indicators
     if tab.is_fullscreen_active {
@@ -1627,6 +1594,12 @@ mod tests {
         assert_eq!(char_width('１'), 2); // fullwidth 1 (U+FF11)
     }
 
+    #[test]
+    fn char_width_emoji_and_lifecycle_glyphs() {
+        assert_eq!(char_width('🔴'), 2);
+        assert_eq!(char_width('⏳'), 2);
+    }
+
     // -- display_width --
 
     #[test]
@@ -1639,6 +1612,23 @@ mod tests {
     fn display_width_mixed() {
         assert_eq!(display_width("Hello世界"), 9); // 5 + 2*2
         assert_eq!(display_width("ab中cd"), 6); // 2 + 2 + 2
+    }
+
+    #[test]
+    fn write_truncated_respects_display_width() {
+        let mut buf = String::new();
+        let used = write_truncated(&mut buf, "界界界", 5);
+
+        assert_eq!(buf, "界界…");
+        assert_eq!(used, 5);
+        assert_eq!(display_width(&buf), 5);
+    }
+
+    #[test]
+    fn render_start_does_not_toggle_terminal_private_modes() {
+        assert_eq!(RENDER_START, "\x1b[H");
+        assert!(!RENDER_START.contains("?7l"));
+        assert!(!RENDER_START.contains("?25l"));
     }
 
     // -- digit_count --
@@ -2284,6 +2274,30 @@ mod tests {
         assert!(!buf.contains("very-long-tab-name-that-exceeds"));
         // Ellipsis should appear (U+2026)
         assert!(buf.contains("\u{2026}"));
+    }
+
+    #[test]
+    fn test_render_single_tab_truncates_wide_name_by_display_width() {
+        let cfg = crate::config::BarConfig::default();
+        let tab = TabInfo {
+            position: 0,
+            name: "界界界界".to_string(),
+            active: true,
+            ..Default::default()
+        };
+        let info = TabRenderInfo {
+            best_activity: None,
+            choir_lifecycle: None,
+            is_flash_bright: false,
+            waiting_pane_id: None,
+            elapsed_str: None,
+        };
+        let mut buf = String::new();
+        let mut col = 0usize;
+        render_single_tab(&mut buf, &mut col, 120, &cfg, &tab, &info, 5, 1, 1);
+
+        assert!(buf.contains("界界…"));
+        assert!(!buf.contains("界界界"));
     }
 
     // -- render_tabs --

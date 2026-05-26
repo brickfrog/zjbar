@@ -1,6 +1,6 @@
 use crate::state::{Activity, FlashMode, HookPayload, SessionInfo, State};
 
-pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
+pub fn handle_hook_event(state: &mut State, payload: HookPayload) -> bool {
     // Capture env info for use in notifications
     if let Some(ref name) = payload.zellij_session {
         state.zellij_session_name = Some(name.clone());
@@ -13,8 +13,7 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
 
     // SessionEnd → remove session
     if event == "SessionEnd" {
-        state.sessions.remove(&payload.pane_id);
-        return;
+        return state.sessions.remove(&payload.pane_id).is_some();
     }
 
     let activity = match event {
@@ -31,21 +30,20 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
         "PermissionRequest" => Activity::Waiting,
         "Notification" => Activity::Notification,
         "Stop" => Activity::Done,
-        _ => return, // Unknown events: preserve existing activity state
+        _ => return false, // Unknown events: preserve existing activity state
     };
 
-    let (tab_index, tab_name) = state
-        .pane_to_tab
-        .get(&payload.pane_id)
-        .cloned()
-        .unzip();
+    let (tab_index, tab_name) = state.pane_to_tab.get(&payload.pane_id).cloned().unzip();
 
     let session = state
         .sessions
         .entry(payload.pane_id)
         .or_insert_with(|| SessionInfo {
             session_id: payload.session_id.clone().unwrap_or_else(|| {
-                eprintln!("[zjbar] hook event missing session_id for pane {}", payload.pane_id);
+                eprintln!(
+                    "[zjbar] hook event missing session_id for pane {}",
+                    payload.pane_id
+                );
                 String::new()
             }),
             pane_id: payload.pane_id,
@@ -56,21 +54,22 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
             cwd: None,
         });
 
+    let mut flash_changed = false;
     if matches!(activity, Activity::Waiting | Activity::Notification) {
         match state.settings.flash {
             FlashMode::Brief => {
-                state.flash_deadlines.insert(
-                    payload.pane_id,
-                    crate::state::unix_now_ms() + crate::state::FLASH_DURATION_MS,
-                );
+                let deadline = crate::state::unix_now_ms() + crate::state::FLASH_DURATION_MS;
+                flash_changed =
+                    state.flash_deadlines.insert(payload.pane_id, deadline) != Some(deadline);
             }
             FlashMode::Persist => {
-                state.flash_deadlines.insert(payload.pane_id, u64::MAX);
+                flash_changed =
+                    state.flash_deadlines.insert(payload.pane_id, u64::MAX) != Some(u64::MAX);
             }
             FlashMode::Off => {}
         }
     } else {
-        state.flash_deadlines.remove(&payload.pane_id);
+        flash_changed = state.flash_deadlines.remove(&payload.pane_id).is_some();
     }
 
     // Validate state transition (permissive: log but apply)
@@ -80,18 +79,25 @@ pub fn handle_hook_event(state: &mut State, payload: HookPayload) {
             session.activity, activity, payload.pane_id, payload.hook_event
         );
     }
+    let mut changed = session.activity != activity;
     session.activity = activity;
-    session.last_event_ts = crate::state::unix_now();
+    let now = crate::state::unix_now();
+    changed |= session.last_event_ts != now;
+    session.last_event_ts = now;
     if let Some(sid) = &payload.session_id {
+        changed |= session.session_id != *sid;
         session.session_id = sid.clone();
     }
     if let Some(cwd) = payload.cwd {
+        changed |= session.cwd.as_ref() != Some(&cwd);
         session.cwd = Some(cwd);
     }
     if let Some((idx, name)) = tab_index.zip(tab_name) {
+        changed |= session.tab_index != Some(idx) || session.tab_name.as_ref() != Some(&name);
         session.tab_index = Some(idx);
         session.tab_name = Some(name);
     }
+    changed || flash_changed
 }
 
 #[cfg(test)]
