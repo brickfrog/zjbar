@@ -24,7 +24,6 @@ use zellij_tile::prelude::*;
 const DONE_TIMEOUT: u64 = 30;
 const TIMER_INTERVAL: f64 = 1.0;
 const FLASH_TICK: f64 = 0.25;
-const CHOIR_NO_CHOIR_POLL_INTERVAL_MS: u64 = 10_000;
 const CHOIR_ERROR_POLL_INTERVAL_MS: u64 = 5_000;
 
 register_plugin!(State);
@@ -182,7 +181,7 @@ impl ZellijPlugin for State {
                                 }
                             }
                         } else {
-                            self.schedule_next_choir_poll(CHOIR_NO_CHOIR_POLL_INTERVAL_MS);
+                            self.schedule_next_choir_poll(CHOIR_POLL_INTERVAL_MS);
                             self.apply_choir_status_error(ChoirStatus::NoChoir)
                         }
                     }
@@ -957,8 +956,13 @@ mod tests {
     }
 
     #[test]
-    fn test_no_choir_backoff_is_slower_than_regular_poll() {
-        assert!(CHOIR_NO_CHOIR_POLL_INTERVAL_MS > CHOIR_POLL_INTERVAL_MS);
+    fn test_no_choir_retry_keeps_glance_cadence() {
+        let mut state = State::default();
+
+        state.schedule_next_choir_poll(CHOIR_POLL_INTERVAL_MS);
+
+        let next_poll_delay = state.choir_next_poll_ms.saturating_sub(unix_now_ms());
+        assert!(next_poll_delay <= CHOIR_POLL_INTERVAL_MS);
     }
 
     #[test]
