@@ -164,6 +164,7 @@ fn format_elapsed(secs: u64) -> String {
     }
 }
 
+#[derive(Clone)]
 struct TabRenderInfo {
     best_activity: Option<Activity>,
     choir_lifecycle: Option<Lifecycle>,
@@ -191,6 +192,110 @@ impl TabRenderInfo {
             .map(|lifecycle| 1 + display_width(lifecycle_symbol(lifecycle)))
             .unwrap_or(0)
     }
+}
+
+fn tab_name_budget_for_indices(
+    indices: &[usize],
+    tabs: &[&TabInfo],
+    tab_infos: &[TabRenderInfo],
+    cfg: &crate::config::BarConfig,
+    prefix_cols: usize,
+    total_cols: usize,
+) -> usize {
+    let selected_tabs: Vec<&TabInfo> = indices.iter().map(|&i| tabs[i]).collect();
+    let selected_infos: Vec<TabRenderInfo> =
+        indices.iter().map(|&i| tab_infos[i].clone()).collect();
+    compute_tab_widths(
+        &selected_tabs,
+        &selected_infos,
+        cfg,
+        prefix_cols,
+        total_cols,
+    )
+    .max_name_len
+}
+
+fn visible_tab_indices(
+    tabs: &[&TabInfo],
+    tab_infos: &[TabRenderInfo],
+    cfg: &crate::config::BarConfig,
+    prefix_cols: usize,
+    total_cols: usize,
+    active_tab_position: Option<usize>,
+) -> Vec<usize> {
+    if tabs.is_empty() {
+        return Vec::new();
+    }
+
+    let all_indices: Vec<usize> = (0..tabs.len()).collect();
+    if tab_name_budget_for_indices(&all_indices, tabs, tab_infos, cfg, prefix_cols, total_cols) > 0
+    {
+        return all_indices;
+    }
+
+    let active_index = tabs
+        .iter()
+        .position(|tab| tab.active)
+        .or_else(|| {
+            active_tab_position
+                .and_then(|position| tabs.iter().position(|tab| tab.position == position))
+        })
+        .unwrap_or(0);
+    let mut selected = vec![active_index];
+    if tab_name_budget_for_indices(&selected, tabs, tab_infos, cfg, prefix_cols, total_cols) == 0 {
+        return Vec::new();
+    }
+
+    let mut left = active_index.checked_sub(1);
+    let mut right = (active_index + 1 < tabs.len()).then_some(active_index + 1);
+    let mut prefer_left = true;
+
+    while left.is_some() || right.is_some() {
+        let prefer_left_first = prefer_left;
+        prefer_left = !prefer_left;
+        let mut added = false;
+
+        for try_left in [prefer_left_first, !prefer_left_first] {
+            let next = if try_left { left } else { right };
+            let Some(index) = next else {
+                continue;
+            };
+
+            let mut candidate = selected.clone();
+            candidate.push(index);
+            candidate.sort_unstable();
+
+            if tab_name_budget_for_indices(
+                &candidate,
+                tabs,
+                tab_infos,
+                cfg,
+                prefix_cols,
+                total_cols,
+            ) > 0
+            {
+                selected = candidate;
+                added = true;
+            }
+
+            if try_left {
+                left = index.checked_sub(1);
+            } else {
+                right = (index + 1 < tabs.len()).then_some(index + 1);
+            }
+
+            if added {
+                break;
+            }
+        }
+
+        if !added {
+            break;
+        }
+    }
+
+    selected.sort_unstable();
+    selected
 }
 
 fn status_pane_priority(pane: &StatusBarPane) -> (u8, u8, u64) {
@@ -1506,6 +1611,16 @@ fn render_tabs(state: &mut State, buf: &mut String, col: &mut usize, cols: usize
     let sep_tab_width = display_width(&cfg.separator_tab);
 
     let tab_infos = compute_tab_info(state, &tabs, now_s, now_ms);
+    let visible_indices =
+        visible_tab_indices(&tabs, &tab_infos, cfg, *col, cols, state.active_tab_index);
+    if visible_indices.is_empty() {
+        return;
+    }
+    let tabs: Vec<&TabInfo> = visible_indices.iter().map(|&i| tabs[i]).collect();
+    let tab_infos: Vec<TabRenderInfo> = visible_indices
+        .iter()
+        .map(|&i| tab_infos[i].clone())
+        .collect();
 
     let budget = compute_tab_widths(&tabs, &tab_infos, cfg, *col, cols);
     let max_name_len = budget.max_name_len;
@@ -2134,6 +2249,66 @@ mod tests {
         assert!(budget_2.max_name_len > budget_10.max_name_len);
     }
 
+    #[test]
+    fn test_visible_tab_indices_drop_tabs_before_blank_names() {
+        let cfg = crate::config::BarConfig::default();
+        let tabs: Vec<TabInfo> = (0..11)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab #{}", i + 1),
+                active: i == 10,
+                ..Default::default()
+            })
+            .collect();
+        let tab_refs: Vec<&TabInfo> = tabs.iter().collect();
+        let infos: Vec<TabRenderInfo> = (0..11)
+            .map(|_| TabRenderInfo {
+                best_activity: None,
+                choir_lifecycle: None,
+                is_flash_bright: false,
+                waiting_pane_id: None,
+                elapsed_str: None,
+            })
+            .collect();
+
+        let all_indices: Vec<usize> = (0..tab_refs.len()).collect();
+        assert_eq!(
+            tab_name_budget_for_indices(&all_indices, &tab_refs, &infos, &cfg, 20, 120),
+            0
+        );
+
+        let visible = visible_tab_indices(&tab_refs, &infos, &cfg, 20, 120, Some(10));
+        assert!(visible.len() < tab_refs.len());
+        assert!(visible.contains(&10));
+        assert!(tab_name_budget_for_indices(&visible, &tab_refs, &infos, &cfg, 20, 120) > 0);
+    }
+
+    #[test]
+    fn test_visible_tab_indices_use_active_tab_position_fallback() {
+        let cfg = crate::config::BarConfig::default();
+        let tabs: Vec<TabInfo> = (0..11)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab #{}", i + 1),
+                active: false,
+                ..Default::default()
+            })
+            .collect();
+        let tab_refs: Vec<&TabInfo> = tabs.iter().collect();
+        let infos: Vec<TabRenderInfo> = (0..11)
+            .map(|_| TabRenderInfo {
+                best_activity: None,
+                choir_lifecycle: None,
+                is_flash_bright: false,
+                waiting_pane_id: None,
+                elapsed_str: None,
+            })
+            .collect();
+
+        let visible = visible_tab_indices(&tab_refs, &infos, &cfg, 20, 120, Some(10));
+        assert!(visible.contains(&10));
+    }
+
     // -- render_single_tab --
 
     #[test]
@@ -2561,6 +2736,30 @@ mod tests {
         render_tabs(&mut state, &mut buf, &mut col, 60);
         // With col=40, cols=60, only 20 cols remaining. Not all 5 tabs can fit.
         assert!(state.click_regions.len() < 5);
+    }
+
+    #[test]
+    fn test_render_tabs_overflow_keeps_active_tab_visible() {
+        let mut state = State::default();
+        state.tabs = (0..11)
+            .map(|i| TabInfo {
+                position: i,
+                name: format!("Tab #{}", i + 1),
+                active: i == 10,
+                ..Default::default()
+            })
+            .collect();
+
+        let mut buf = String::new();
+        let mut col = 20usize;
+        render_tabs(&mut state, &mut buf, &mut col, 120);
+
+        assert!(state.click_regions.len() < 11);
+        assert!(state
+            .click_regions
+            .iter()
+            .any(|region| region.tab_index == 10));
+        assert!(buf.contains('…'));
     }
 
     // -- render_status_bar --
