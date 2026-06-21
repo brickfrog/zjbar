@@ -9,7 +9,7 @@ layout {
         pane size=1 borderless=true {
             plugin location="file:~/.config/zellij/plugins/zjbar.wasm" {
                 // -- Choir status source --
-                // choir_socket ".choir/server.sock"
+                // choir_socket ".choir/run/server.sock"
 
                 // -- Bar background --
                 // bar_bg "#1a1b26"

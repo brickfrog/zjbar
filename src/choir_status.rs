@@ -219,7 +219,7 @@ pub fn poll_command(socket_path: &str, initial_cwd: Option<&str>) -> String {
 import socket
 import sys
 
-sock_path = os.environ.get('ZJBAR_CHOIR_SOCKET', '.choir/server.sock')
+sock_path = os.environ.get('ZJBAR_CHOIR_SOCKET', '.choir/run/server.sock')
 request = os.environ['ZJBAR_CHOIR_REQUEST'] + '\n'
 def candidate_socket_paths(sock_path):
     if os.path.isabs(sock_path):
@@ -504,10 +504,10 @@ mod tests {
     #[test]
     fn poll_command_contains_socket_and_request() {
         let command = poll_command(
-            ".choir/server.sock",
+            ".choir/run/server.sock",
             Some("/workspace/.choir/worktrees/leaf"),
         );
-        assert!(command.contains("ZJBAR_CHOIR_SOCKET='.choir/server.sock'"));
+        assert!(command.contains("ZJBAR_CHOIR_SOCKET='.choir/run/server.sock'"));
         assert!(command.contains("ZJBAR_CHOIR_REQUEST="));
         assert!(command.contains("AF_UNIX"));
         assert!(command.contains("CHOIR_WORKSPACE"));

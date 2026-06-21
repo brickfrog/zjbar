@@ -10,7 +10,7 @@
 
 - **统一 Powerline 导航栏** — Tokyo Night 主题、可点击的单行导航，先显示原生 Zellij tab，再显示共享 tab 的 choir 叶子入口
 - **Session 和模式显示** — 显示会话名称和输入模式（NORMAL、LOCKED、PANE 等），带有颜色编码的标签
-- **Choir 状态源** — 轮询 `.choir/server.sock` 的类型化 `status_bar_state` 快照；不使用进程名推断
+- **Choir 状态源** — 轮询 `.choir/run/server.sock` 的类型化 `status_bar_state` 快照；不使用进程名推断
 - **Choir 状态折叠** — 在对应 tab 或叶子 pane 旁渲染生命周期符号，并折叠解析到同一个 Zellij pane 的重复代理
 - **原生快捷键栏** — 保留 Zellij 原来的底部 status-bar 插件，用于显示快捷键提示
 - **点击聚焦窗格** — 点击任意共享 tab 的合成 choir 叶子入口即可聚焦对应的 Zellij pane
@@ -22,7 +22,7 @@
 
 - [Zellij](https://zellij.dev)
 - `PATH` 中可用的 Python 3（WASM 插件通过宿主侧 UDS 桥接使用）
-- choir 在 `.choir/server.sock` 上暴露 `status_bar_state` MCP 命令
+- choir 在 `.choir/run/server.sock` 上暴露 `status_bar_state` MCP 命令
 
 ### 方式一：使用发布版二进制文件
 
@@ -33,7 +33,7 @@ layout {
     default_tab_template {
         pane size=1 borderless=true {
             plugin location="https://github.com/brickfrog/zjbar/releases/download/v1.2.0/zjbar.wasm" {
-                choir_socket ".choir/server.sock"
+                choir_socket ".choir/run/server.sock"
             }
         }
         children
@@ -80,7 +80,7 @@ zjbar 每秒轮询一次 choir Unix domain socket，并发送换行分帧的 JSO
 
 Choir 生命周期状态会折叠进主导航行。真实 Zellij tab 保留原生 tab 编号和点击行为；当 choir leaf 拥有自己的真实 tab 时，生命周期符号会显示在该 tab 上，而不会再创建第二个入口。与其他终端 pane 共享同一个 Zellij tab 的非顶层 choir pane 会追加为可聚焦入口，并优先使用 Zellij 暴露的 pane 标题。如果多个 choir 代理解析到同一个 Zellij pane，zjbar 会为该 pane 选择优先级最高或最新的状态，而不是渲染重复的 `agent-*` 入口。
 
-在 choir 暴露 `status_bar_state` 之前，或 `.choir/server.sock` 不可达时，zjbar 会保持原生 tab 行可用，并渲染紧凑的 `no choir` 指示器，不渲染推断的 pane 字段。如果服务端返回的 `schema_version` 大于客户端支持版本，zjbar 会渲染 `schema ahead vN`，并拒绝渲染任何 pane 字段。
+在 choir 暴露 `status_bar_state` 之前，或 `.choir/run/server.sock` 不可达时，zjbar 会保持原生 tab 行可用，并渲染紧凑的 `no choir` 指示器，不渲染推断的 pane 字段。如果服务端返回的 `schema_version` 大于客户端支持版本，zjbar 会渲染 `schema ahead vN`，并拒绝渲染任何 pane 字段。
 
 旧 hook 脚本仍保留在仓库中，方便上游兼容维护；但这个 fork 的状态渲染由 choir 状态驱动。
 
@@ -125,7 +125,7 @@ Choir lifecycle 值渲染为：
 ```kdl
 plugin location="zjbar.wasm" {
     // Choir 状态源
-    choir_socket ".choir/server.sock"
+    choir_socket ".choir/run/server.sock"
 
     // 颜色：任意 "#rrggbb" 十六进制值
     bar_bg          "#1a1b26"
@@ -160,7 +160,7 @@ plugin location="zjbar.wasm" {
 ## 工作原理
 
 1. **WASM 插件** — 作为顶部 chrome 在 Zellij 内运行，渲染统一的 tab/choir 导航行，管理点击区域和 flash timing。
-2. **宿主侧 UDS 桥接** — Zellij `run_command` 调用 Python 3 连接 `.choir/server.sock`，发送 `status_bar_state` JSON-RPC 请求，并返回一条换行分帧响应。
+2. **宿主侧 UDS 桥接** — Zellij `run_command` 调用 Python 3 连接 `.choir/run/server.sock`，发送 `status_bar_state` JSON-RPC 请求，并返回一条换行分帧响应。
 3. **类型化快照渲染器** — Rust 按 v1 schema 解析响应，只渲染已识别字段。默认布局把 zjbar 放在顶部，恢复 Zellij 原生快捷键/状态栏到底部，并把 choir 状态折叠到与 Zellij tab 相同的可选中行中。所有失败都会 fail closed。
 
 ## 卸载
